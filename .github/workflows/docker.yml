@@ -1,0 +1,51 @@
+# Docker — Build image and run full pipeline (install + build + test) inside container.
+# Trigger-based only: run from Actions tab → Docker → Run workflow.
+
+name: Docker
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-build-and-test:
+    name: Build image and run tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: normitri-builder:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Run install + build + test in container
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            -w /src \
+            -e GITHUB_TOKEN \
+            normitri-builder:ci \
+            bash -c './scripts/build_nomitri.sh all && ctest --test-dir build --output-on-failure -C Release'
+
+      - name: Summary
+        run: |
+          echo "## Docker — OK" >> $GITHUB_STEP_SUMMARY
+          echo "- Image built and cached (gha)" >> $GITHUB_STEP_SUMMARY
+          echo "- install + build + ctest passed inside container" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,92 @@
+# Normitri CI — Build and test on Linux with GCC and Clang (C++23, Conan, OpenCV, GTest)
+# Trigger-based only: run from Actions tab → CI → Run workflow (uses selected ref, e.g. branch or PR).
+
+name: CI
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.compiler }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+        compiler: [gcc, clang]
+        include:
+          - compiler: gcc
+            cc: gcc-13
+            cxx: g++-13
+          - compiler: clang
+            cc: clang-18
+            cxx: clang++-18
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install compiler (${{ matrix.compiler }})
+        run: |
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y gcc-13 g++-13
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y clang-18
+          fi
+          echo "CC=${{ matrix.cc }}" >> $GITHUB_ENV
+          echo "CXX=${{ matrix.cxx }}" >> $GITHUB_ENV
+
+      - name: Install CMake and system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake build-essential \
+            libva-dev libvdpau-dev libxkbcommon-dev libwayland-dev \
+            libxrandr-dev libgl1-mesa-dev libdrm-dev
+
+      - name: Set up Conan
+        uses: conan-io/setup-conan@v2
+        with:
+          version: "2"
+          cache_packages: true
+          profile_detect: true
+
+      - name: Conan profile detect (compiler)
+        run: |
+          conan profile detect --force
+          conan profile show
+
+      - name: Configure Conan for CI (C++23)
+        run: |
+          # Ensure C++23 for this project's requirements
+          conan profile update settings.compiler.cppstd=23 default || true
+          conan profile show default
+
+      - name: Install dependencies (Conan)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          conan install . --output-folder=build --build=missing \
+            -c tools.system.package_manager:mode=install
+
+      - name: Configure and build
+        env:
+          NORMITRI_CMAKE_ARGS: -DNORMITRI_WARNINGS_AS_ERRORS=ON
+        run: |
+          ./scripts/build_nomitri.sh build
+
+      - name: Run tests
+        run: |
+          ctest --test-dir build --output-on-failure -C Release
+
+      - name: Summary
+        run: |
+          echo "## ${{ matrix.compiler }} on ${{ matrix.os }} — OK" >> $GITHUB_STEP_SUMMARY
+          echo "- Compiler: ${{ matrix.cc }} / ${{ matrix.cxx }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tests: ctest passed" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,89 @@
+# Release & CD — Trigger-based: build, test, create GitHub Release, upload artifacts.
+# Run from Actions tab → Release → Run workflow, enter version (e.g. v0.1.0). Tag must exist (create & push first).
+# Delivers: Linux x64 CLI binary, source archive, checksums.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v0.1.0)'
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build, test, and publish release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.version }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: normitri-builder:release
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and test in container
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            -w /src \
+            -e GITHUB_TOKEN \
+            normitri-builder:release \
+            bash -c './scripts/build_nomitri.sh all && ctest --test-dir build --output-on-failure -C Release'
+
+      - name: Prepare release artifacts
+        run: |
+          BIN="build/apps/normitri-cli/normitri_cli"
+          [ -f "$BIN" ] || BIN="build/normitri_cli"
+          [ -f "$BIN" ] || { echo "Binary not found"; exit 1; }
+          strip "$BIN" || true
+          mkdir -p release
+          cp "$BIN" "release/normitri_cli-linux-x86_64"
+          VERSION="${{ steps.version.outputs.version }}"
+          git archive --format=zip --prefix=normitri-"$VERSION"/ -o "release/normitri-${VERSION}-source.zip" HEAD
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: release/*
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Release ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux x64 CLI: \`normitri_cli-linux-x86_64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Source archive and SHA256SUMS attached" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,49 @@
+# Format — Check C++ and header files with clang-format (.clang-format in repo).
+# Trigger-based only: run from Actions tab → Format → Run workflow.
+
+name: Format
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-check:
+    name: clang-format
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang-format-18
+          echo "CLANG_FORMAT=clang-format-18" >> $GITHUB_ENV
+
+      - name: List formatted files
+        id: files
+        run: |
+          FILES=$(git ls-files -- '*.cpp' '*.hpp' '*.h' '*.c' '*.cxx' '*.hxx' | tr '\n' ' ')
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          echo "count=$(echo "$FILES" | wc -w)" >> $GITHUB_OUTPUT
+
+      - name: Check formatting
+        run: |
+          FILES="${{ steps.files.outputs.files }}"
+          if [ -z "${FILES// }" ]; then
+            echo "No C/C++ files to check."
+            exit 0
+          fi
+          for f in $FILES; do
+            $CLANG_FORMAT --dry-run -Werror "$f" || exit 1
+          done
+
+      - name: Summary
+        run: |
+          echo "## Format — OK" >> $GITHUB_STEP_SUMMARY
+          echo "All tracked C/C++ files match .clang-format." >> $GITHUB_STEP_SUMMARY

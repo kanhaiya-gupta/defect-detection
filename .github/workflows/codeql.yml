@@ -1,0 +1,51 @@
+# CodeQL — Security and quality analysis for C++.
+# Trigger-based only: run from Actions tab → CodeQL → Run workflow; results in Security tab.
+
+name: CodeQL
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL C++
+    runs-on: ubuntu-24.04
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+          queries: security-extended
+
+      - name: Install Conan and dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-pip cmake build-essential \
+            gcc-13 g++-13 \
+            libva-dev libvdpau-dev libxkbcommon-dev libwayland-dev \
+            libxrandr-dev libgl1-mesa-dev libdrm-dev
+          pip3 install --break-system-packages conan
+          conan profile detect --force
+          conan profile update settings.compiler.cppstd=23 default || true
+          conan install . --output-folder=build --build=missing \
+            -c tools.system.package_manager:mode=install
+
+      - name: Build (for CodeQL)
+        run: ./scripts/build_nomitri.sh build
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:cpp

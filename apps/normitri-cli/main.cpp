@@ -1,0 +1,112 @@
+/**
+ * normitri-cli — Run defect-detection pipeline on image(s); output defects.
+ * Build: cmake -B build && cmake --build build
+ * Run:   ./build/apps/normitri-cli/normitri_cli [--config path] [--input path]
+ */
+
+#include <normitri/app/config.hpp>
+#include <normitri/app/pipeline_runner.hpp>
+#include <normitri/core/defect.hpp>
+#include <normitri/core/defect_result.hpp>
+#include <normitri/core/frame.hpp>
+#include <normitri/core/pipeline.hpp>
+#include <normitri/vision/defect_decoder.hpp>
+#include <normitri/vision/defect_detection_stage.hpp>
+#include <normitri/vision/mock_inference_backend.hpp>
+#include <normitri/vision/normalize_stage.hpp>
+#include <normitri/vision/resize_stage.hpp>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+namespace {
+
+std::string defect_kind_str(normitri::core::DefectKind k) {
+  switch (k) {
+    case normitri::core::DefectKind::WrongItem: return "WrongItem";
+    case normitri::core::DefectKind::WrongQuantity: return "WrongQuantity";
+    case normitri::core::DefectKind::ExpiredOrQuality: return "ExpiredOrQuality";
+    case normitri::core::DefectKind::ProcessError: return "ProcessError";
+    default: return "Unknown";
+  }
+}
+
+normitri::core::Pipeline build_pipeline(const normitri::app::PipelineConfig& cfg) {
+  using namespace normitri::core;
+  using namespace normitri::vision;
+
+  normitri::core::Pipeline pipeline;
+
+  pipeline.add_stage(std::make_unique<ResizeStage>(cfg.resize_width, cfg.resize_height));
+  pipeline.add_stage(std::make_unique<NormalizeStage>(cfg.normalize_mean, cfg.normalize_scale));
+
+  ClassToDefectKindMap class_to_kind = {
+      DefectKind::WrongItem,
+      DefectKind::WrongQuantity,
+      DefectKind::ExpiredOrQuality,
+      DefectKind::ProcessError,
+  };
+  DefectDecoder decoder(cfg.confidence_threshold, std::move(class_to_kind));
+  auto mock = std::make_unique<MockInferenceBackend>();
+  mock->set_defects({
+      {DefectKind::WrongItem, {0.1f, 0.2f, 0.3f, 0.4f}, 0.95f, std::nullopt, std::nullopt},
+  });
+
+  pipeline.add_stage(std::make_unique<DefectDetectionStage>(
+      std::move(mock), std::move(decoder), 0));
+
+  return pipeline;
+}
+
+normitri::core::Frame make_dummy_frame(std::uint32_t w, std::uint32_t h) {
+  const std::size_t bytes = static_cast<std::size_t>(w) * h * 3;
+  std::vector<std::byte> buffer(bytes, std::byte{0});
+  return normitri::core::Frame(w, h, normitri::core::PixelFormat::RGB8, std::move(buffer));
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+  std::string config_path;
+  std::string input_path;
+
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--config" && i + 1 < argc) {
+      config_path = argv[++i];
+    } else if (arg == "--input" && i + 1 < argc) {
+      input_path = argv[++i];
+    } else if (arg == "--help" || arg == "-h") {
+      std::cout << "Usage: normitri_cli [--config <path>] [--input <path>]\n"
+                << "  --config  Pipeline config (key=value file); default: built-in\n"
+                << "  --input   Image path (optional; demo uses synthetic frame)\n";
+      return 0;
+    }
+  }
+
+  normitri::app::PipelineConfig cfg =
+      config_path.empty() ? normitri::app::default_config()
+                          : normitri::app::load_config(config_path);
+
+  normitri::core::Pipeline pipeline = build_pipeline(cfg);
+
+  normitri::core::Frame frame = make_dummy_frame(320, 240);
+  auto result = normitri::app::run_pipeline(pipeline, frame);
+
+  if (!result) {
+    std::cerr << "Pipeline error: " << static_cast<int>(result.error()) << "\n";
+    return 1;
+  }
+
+  std::cout << "frame_id=" << result->frame_id
+            << " defects=" << result->defects.size() << "\n";
+  for (const auto& d : result->defects) {
+    std::cout << "  " << defect_kind_str(d.kind)
+              << " confidence=" << d.confidence
+              << " bbox=(" << d.bbox.x << "," << d.bbox.y << ","
+              << d.bbox.w << "," << d.bbox.h << ")\n";
+  }
+  return 0;
+}

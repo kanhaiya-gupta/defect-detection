@@ -1,0 +1,16 @@
+[requires]
+opencv/4.9.0
+gtest/1.14.0
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+# Disable FFmpeg to avoid Conan CMake error: ffmpeg target references libwebp::libwebp
+# which is not found during OpenCV configure. Normitri only needs core/imgproc (resize, normalize,
+# color conversion), not video I/O.
+opencv/*:with_ffmpeg=False
+
+[layout]
+cmake_layout

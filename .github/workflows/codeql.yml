@@ -44,7 +44,7 @@ jobs:
             -c tools.system.package_manager:mode=install
 
       - name: Build (for CodeQL)
-        run: ./scripts/build_nomitri.sh build
+        run: bash scripts/build_nomitri.sh build
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3

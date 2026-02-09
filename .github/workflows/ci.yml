@@ -82,7 +82,7 @@ jobs:
         env:
           NORMITRI_CMAKE_ARGS: -DNORMITRI_WARNINGS_AS_ERRORS=ON
         run: |
-          ./scripts/build_nomitri.sh build
+          bash scripts/build_nomitri.sh build
 
       - name: Run tests
         run: |

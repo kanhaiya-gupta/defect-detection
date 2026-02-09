@@ -1,0 +1,2 @@
+# Ensure shell scripts always use LF (avoid CRLF on Windows checkout)
+*.sh text eol=lf

@@ -1,0 +1,22 @@
+flowchart LR
+    subgraph Input[" "]
+        Img["🖼️ Image / Frame<br/>Camera, File, Stream"]
+    end
+
+    subgraph Preprocess["Preprocessing"]
+        Resize["📐 Resize<br/>Model input size"]
+        Normalize["📊 Normalize<br/>e.g. 0–1"]
+        Color["🎨 Color Convert<br/>e.g. BGR→RGB"]
+    end
+
+    subgraph Inference["Inference"]
+        Backend["⚡ Inference Backend<br/>ONNX / TensorRT / Mock"]
+        Decode["🔍 Defect Decoder<br/>Thresholds, NMS"]
+    end
+
+    subgraph Output[" "]
+        Result["✅ DefectResult<br/>frame_id, defects"]
+        Alert["📢 Alerts / POS / Dashboard"]
+    end
+
+    Img --> Resize --> Normalize --> Color --> Backend --> Decode --> Result --> Alert

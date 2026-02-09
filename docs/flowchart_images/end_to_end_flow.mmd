@@ -1,0 +1,37 @@
+flowchart TD
+    subgraph Sources["Input sources (parallel)"]
+        Cam["📷 Camera"]
+        File["📁 Image file"]
+        Stream["📡 Stream"]
+    end
+
+    Cam --> Frame["Frame<br/>width, height, format, buffer"]
+    File --> Frame
+    Stream --> Frame
+
+    Frame --> Resize["ResizeStage<br/>📐 Target size"]
+    Resize --> Normalize["NormalizeStage<br/>📊 Mean/scale"]
+    Normalize --> ColorConvert["ColorConvertStage<br/>🎨 Format for model"]
+    ColorConvert --> DefectStage["DefectDetectionStage"]
+
+    subgraph DefectStage["DefectDetectionStage"]
+        Validate["validate_input()"]
+        Infer["infer() / infer_batch()"]
+        Decode["DefectDecoder"]
+    end
+
+    Validate --> Infer --> Decode
+
+    Decode --> DefectResult["DefectResult<br/>frame_id, defects[]"]
+
+    DefectResult --> App["Application layer"]
+    App --> Log["Log / Store"]
+    App --> Alert["Alert / POS"]
+    App --> Report["Report / Dashboard"]
+
+    classDef input fill:#e3f2fd,stroke:#1565c0
+    classDef process fill:#f3e5f5,stroke:#7b1fa2
+    classDef output fill:#e8f5e9,stroke:#2e7d32
+    class Frame,Resize,Normalize,ColorConvert input
+    class Validate,Infer,Decode,DefectStage process
+    class DefectResult,Log,Alert,Report output

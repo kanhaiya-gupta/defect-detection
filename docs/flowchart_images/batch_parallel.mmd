@@ -1,0 +1,22 @@
+flowchart TD
+    Frames["📦 Batch of Frames"]
+    Frames --> Choice{"Run mode?"}
+
+    Choice -->|Sequential| Seq["run_pipeline_batch<br/>One frame after another"]
+    Choice -->|Parallel| Par["run_pipeline_batch_parallel<br/>Thread pool, N workers"]
+
+    Seq --> Run1["Pipeline::run(frame₁)"]
+    Seq --> Run2["Pipeline::run(frame₂)"]
+    Seq --> RunN["Pipeline::run(frameₙ)"]
+
+    Par --> Pool["Worker 1 … Worker N"]
+    Pool --> RunP1["Pipeline::run(frame)"]
+    Pool --> RunP2["Pipeline::run(frame)"]
+
+    Run1 --> CB["Callback(DefectResult)"]
+    Run2 --> CB
+    RunN --> CB
+    RunP1 --> CB
+    RunP2 --> CB
+
+    CB --> Out["Collect / Alert / Store"]

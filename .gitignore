@@ -40,3 +40,13 @@ venv/
 
 # Optional: generated PNGs from Mermaid (uncomment if you don't commit them)
 # docs/flowchart_images/*.png
+
+# CLI result files (written when using --input)
+output/
+
+# Sample/test images (data/images/README.md is tracked; run scripts/download_sample_images.sh to fetch images)
+data/images/*.jpg
+data/images/*.jpeg
+data/images/*.png
+data/images/*.bmp
+data/images/*.webp

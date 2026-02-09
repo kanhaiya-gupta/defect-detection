@@ -84,6 +84,7 @@ normitri_enable_warnings(normitri_core)
 # -----------------------------------------------------------------------------
 add_library(normitri_vision
   src/vision/frame_cv_utils.cpp
+  src/vision/load_image.cpp
   src/vision/inference_backend.cpp
   src/vision/resize_stage.cpp
   src/vision/normalize_stage.cpp

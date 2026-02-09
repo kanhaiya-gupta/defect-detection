@@ -46,33 +46,36 @@ jobs:
       - name: Install CMake and system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y cmake build-essential \
+          sudo apt-get install -y cmake build-essential python3-pip \
             libva-dev libvdpau-dev libxkbcommon-dev libwayland-dev \
             libxrandr-dev libgl1-mesa-dev libdrm-dev
 
-      - name: Set up Conan
-        uses: conan-io/setup-conan@v1
+      - name: Set up Python and Conan
+        uses: actions/setup-python@v5
         with:
-          version: "2"
-          cache_packages: true
-          profile_detect: true
+          python-version: "3.11"
+
+      - name: Install Conan
+        run: pip install conan
+
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
+          restore-keys: conan-${{ runner.os }}-
 
       - name: Conan profile detect (compiler)
         run: |
           conan profile detect --force
           conan profile show
 
-      - name: Configure Conan for CI (C++23)
-        run: |
-          # Ensure C++23 for this project's requirements
-          conan profile update settings.compiler.cppstd=23 default || true
-          conan profile show default
-
       - name: Install dependencies (Conan)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           conan install . --output-folder=build --build=missing \
+            -s compiler.cppstd=23 \
             -c tools.system.package_manager:mode=install
 
       - name: Configure and build

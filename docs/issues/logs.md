@@ -278,4 +278,38 @@ So CMake finds OpenCV and GTest from the Conan-generated configs even when the s
 
 ---
 
-*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators).*
+## 8. OpenCV 4.9.0 Conan sha256 signature failed
+
+### Problem
+
+During `conan install` (or `./scripts/build_nomitri.sh install` / Docker build), Conan downloads OpenCV 4.9.0 and then fails with:
+
+```text
+ConanException: sha256 signature failed for '4.9.0.tar.gz' file.
+ Provided signature: 8952c45a73b75676c522dd574229f563e43c271ae1d5bbbd26f8e2b6bc1a4dae
+ Computed signature: 9ae383334fe84aab0fef92d496d103e92636fbe4ff4953d37e28bd0bdbb0b1fe
+```
+
+### Cause
+
+The checksum stored in the Conan Center recipe for OpenCV 4.9.0 no longer matches the tarball served by the upstream source (e.g. GitHub or OpenCV’s CDN). This can happen when the upstream file is replaced or the recipe is out of date.
+
+### Solution
+
+**conanfile.txt** was updated to use **opencv/4.8.1** instead of **opencv/4.9.0**. The 4.8.x API is compatible for our use (core, imgproc, imgcodecs). After pulling the change:
+
+1. Remove the failed OpenCV package from the Conan cache (optional but recommended):
+   ```bash
+   conan remove "opencv/4.9.0" -c
+   ```
+2. Run install again:
+   ```bash
+   ./scripts/build_nomitri.sh install
+   ```
+   or in Docker: `./scripts/docker_nomitri.sh` (rebuilds from a clean install).
+
+If you need 4.9.x or 4.10+ later, try a newer Conan recipe or a different OpenCV version in conanfile.txt once the Conan Center recipe checksums are fixed.
+
+---
+
+*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators, opencv 4.9.0 sha256 workaround).*

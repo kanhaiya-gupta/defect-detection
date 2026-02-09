@@ -43,5 +43,9 @@ RUN conan profile detect --force
 
 WORKDIR /src
 
+# Copy source so CI/act can run build+test without mounting (workflow uses image /src)
+COPY . /src
+RUN chmod +x /src/scripts/build_nomitri.sh
+
 # Default: run full build (override with docker run ... bash for a shell)
 CMD ["./scripts/build_nomitri.sh", "all"]

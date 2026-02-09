@@ -23,6 +23,7 @@ The pipeline is designed for **edge deployment** (e.g. at POS or in-store) so de
 | [Architecture](architecture.md) | High-level design, modules, and data flow |
 | [Building](building.md) | CMake, Conan, and build options |
 | [Development](development.md) | Coding standards, module contents (core/vision/app), testing, and CI |
+| [Local CI testing (act)](act-local-testing.md) | Run GitHub Actions workflows locally with `act` before pushing |
 | [Detection efficiency](detection-efficiency.md) | Research summary: detection by item type/category/price; design implications before code |
 | [API Reference](api-reference.md) | Core types and pipeline interfaces |
 
@@ -45,4 +46,5 @@ This project demonstrates skills relevant to **Edge AI and Computer Vision** rol
 - [Getting started](building.md#getting-started) — Build and run
 - [Adding a pipeline stage](architecture.md#pipeline-stages) — Extend the CV pipeline
 - [Running tests](development.md#testing) — Test suite and coverage
+- [Local CI with act](act-local-testing.md) — Test workflows locally before pushing
 - [Detection efficiency & product focus](detection-efficiency.md) — Expensive vs cheap, categories, what to design for before code

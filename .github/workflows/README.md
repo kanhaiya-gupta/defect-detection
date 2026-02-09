@@ -9,6 +9,7 @@
 | **Release** | **CD:** Build in Docker, run tests, create GitHub Release and upload **Linux x64 CLI binary**, **source zip**, and **SHA256SUMS**. |
 
 - **Triggers:** All workflows are **trigger-based only**. Run from **Actions** tab → choose workflow → **Run workflow** (optionally pick branch/tag). No automatic runs on push or pull_request.
+- **Local testing:** Use [act](https://github.com/nektos/act) to run workflows locally before pushing. See [docs/act-local-testing.md](../docs/act-local-testing.md).
 - **Concurrency:** New runs cancel in-progress runs for the same ref (release does not cancel).
 - **Secrets:** `GITHUB_TOKEN` is used for Conan, CodeQL, and release uploads; no extra secrets required.
 

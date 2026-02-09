@@ -27,6 +27,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: cpp
+          build-mode: manual
           queries: security-extended
 
       - name: Install Conan and dependencies

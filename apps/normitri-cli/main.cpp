@@ -2,6 +2,7 @@
  * normitri-cli — Run defect-detection pipeline on image(s); output defects.
  * Build: cmake -B build && cmake --build build
  * Run:   ./build/apps/normitri-cli/normitri_cli [--config path] [--input path]
+ * With --input: also writes results to output/<basename>.txt (same content as terminal).
  */
 
 #include <normitri/app/config.hpp>
@@ -12,12 +13,17 @@
 #include <normitri/core/pipeline.hpp>
 #include <normitri/vision/defect_decoder.hpp>
 #include <normitri/vision/defect_detection_stage.hpp>
+#include <normitri/vision/load_image.hpp>
 #include <normitri/vision/mock_inference_backend.hpp>
 #include <normitri/vision/normalize_stage.hpp>
 #include <normitri/vision/resize_stage.hpp>
+
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -25,15 +31,20 @@ namespace {
 
 std::string defect_kind_str(normitri::core::DefectKind k) {
   switch (k) {
-    case normitri::core::DefectKind::WrongItem: return "WrongItem";
-    case normitri::core::DefectKind::WrongQuantity: return "WrongQuantity";
-    case normitri::core::DefectKind::ExpiredOrQuality: return "ExpiredOrQuality";
-    case normitri::core::DefectKind::ProcessError: return "ProcessError";
-    default: return "Unknown";
+  case normitri::core::DefectKind::WrongItem:
+    return "WrongItem";
+  case normitri::core::DefectKind::WrongQuantity:
+    return "WrongQuantity";
+  case normitri::core::DefectKind::ExpiredOrQuality:
+    return "ExpiredOrQuality";
+  case normitri::core::DefectKind::ProcessError:
+    return "ProcessError";
+  default:
+    return "Unknown";
   }
 }
 
-normitri::core::Pipeline build_pipeline(const normitri::app::PipelineConfig& cfg) {
+normitri::core::Pipeline build_pipeline(const normitri::app::PipelineConfig &cfg) {
   using namespace normitri::core;
   using namespace normitri::vision;
 
@@ -54,8 +65,8 @@ normitri::core::Pipeline build_pipeline(const normitri::app::PipelineConfig& cfg
       {DefectKind::WrongItem, {0.1f, 0.2f, 0.3f, 0.4f}, 0.95f, std::nullopt, std::nullopt},
   });
 
-  pipeline.add_stage(std::make_unique<DefectDetectionStage>(
-      std::move(mock), std::move(decoder), 0));
+  pipeline.add_stage(
+      std::make_unique<DefectDetectionStage>(std::move(mock), std::move(decoder), 0));
 
   return pipeline;
 }
@@ -66,9 +77,9 @@ normitri::core::Frame make_dummy_frame(std::uint32_t w, std::uint32_t h) {
   return normitri::core::Frame(w, h, normitri::core::PixelFormat::RGB8, std::move(buffer));
 }
 
-}  // namespace
+} // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   std::string config_path;
   std::string input_path;
 
@@ -86,13 +97,22 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  normitri::app::PipelineConfig cfg =
-      config_path.empty() ? normitri::app::default_config()
-                          : normitri::app::load_config(config_path);
+  normitri::app::PipelineConfig cfg = config_path.empty() ? normitri::app::default_config()
+                                                          : normitri::app::load_config(config_path);
 
   normitri::core::Pipeline pipeline = build_pipeline(cfg);
 
-  normitri::core::Frame frame = make_dummy_frame(320, 240);
+  normitri::core::Frame frame;
+  if (!input_path.empty()) {
+    auto loaded = normitri::vision::load_frame_from_image(input_path);
+    if (!loaded) {
+      std::cerr << "Failed to load image: " << input_path << "\n";
+      return 1;
+    }
+    frame = std::move(*loaded);
+  } else {
+    frame = make_dummy_frame(320, 240);
+  }
   auto result = normitri::app::run_pipeline(pipeline, frame);
 
   if (!result) {
@@ -100,13 +120,26 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  std::cout << "frame_id=" << result->frame_id
-            << " defects=" << result->defects.size() << "\n";
-  for (const auto& d : result->defects) {
-    std::cout << "  " << defect_kind_str(d.kind)
-              << " confidence=" << d.confidence
-              << " bbox=(" << d.bbox.x << "," << d.bbox.y << ","
-              << d.bbox.w << "," << d.bbox.h << ")\n";
+  std::ostringstream out;
+  out << "frame_id=" << result->frame_id << " defects=" << result->defects.size() << "\n";
+  for (const auto &d : result->defects) {
+    out << "  " << defect_kind_str(d.kind) << " confidence=" << d.confidence << " bbox=("
+        << d.bbox.x << "," << d.bbox.y << "," << d.bbox.w << "," << d.bbox.h << ")\n";
+  }
+  std::string text = out.str();
+  std::cout << text;
+
+  if (!input_path.empty()) {
+    std::filesystem::path p(input_path);
+    std::filesystem::path out_dir("output");
+    std::filesystem::create_directories(out_dir);
+    std::filesystem::path out_file = out_dir / (p.stem().string() + ".txt");
+    std::ofstream f(out_file);
+    if (f) {
+      f << text;
+    } else {
+      std::cerr << "Warning: could not write " << out_file << "\n";
+    }
   }
   return 0;
 }

@@ -38,9 +38,10 @@ Batches of frames can run in parallel via `run_pipeline_batch_parallel`. More di
 
 ```bash
 ./scripts/docker_nomitri.sh              # install deps + build (builds image first if needed)
-./build/apps/normitri-cli/normitri_cli --help
-./scripts/docker_nomitri.sh test         # run tests
+./scripts/download_sample_images.sh     # on host: fetch sample image into data/images/ (required before run with --input)
 ./scripts/docker_nomitri.sh run --help   # run CLI inside container
+./scripts/docker_nomitri.sh run --input data/images/sample_shelf.jpg   # run on image; writes output/sample_shelf.txt (in mounted repo)
+./scripts/docker_nomitri.sh test         # run tests
 ./scripts/docker_nomitri.sh shell        # bash inside container
 ```
 
@@ -50,10 +51,11 @@ Batches of frames can run in parallel via `run_pipeline_batch_parallel`. More di
 ./scripts/build_nomitri.sh install   # Install OpenCV + GTest (Conan)
 ./scripts/build_nomitri.sh build    # Configure and build
 ./build/apps/normitri-cli/normitri_cli --help
+./build/apps/normitri-cli/normitri_cli --input data/images/sample_shelf.jpg   # run on image; writes output/sample_shelf.txt
 ctest --test-dir build
 ```
 
-Or one step: `./scripts/build_nomitri.sh all`. On Windows use Git Bash or WSL for the script; for Docker use WSL or Docker Desktop.
+Or one step: `./scripts/build_nomitri.sh all`. On Windows use Git Bash or WSL for the script; for Docker use WSL or Docker Desktop. With `--input`, the CLI also writes results to `output/<basename>.txt`.
 
 ---
 
@@ -80,6 +82,7 @@ Or one step: `./scripts/build_nomitri.sh all`. On Windows use Git Bash or WSL fo
 | [**Workflow**](docs/workflow.md) | Pipeline diagrams (single-frame, batch, parallel). |
 | [**Architecture**](docs/architecture.md) | High-level design, layers (core → vision → app), pipeline stages, adding stages. |
 | [**Building**](docs/building.md) | CMake, Conan, Docker, options, CI, releases. |
+| [**Local CI testing (act)**](docs/act-local-testing.md) | Run GitHub Actions workflows locally with act before pushing. |
 | [**Development**](docs/development.md) | Coding standards, module contents, testing. |
 | [**API Reference**](docs/api-reference.md) | Core types (Frame, Defect, DefectResult) and pipeline interfaces. |
 | [**Detection efficiency**](docs/detection-efficiency.md) | Design considerations: detection by item type/category/price. |

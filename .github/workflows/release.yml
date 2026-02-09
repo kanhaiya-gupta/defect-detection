@@ -51,12 +51,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker run --rm \
-            -v "$PWD:/src" \
-            -w /src \
-            -e GITHUB_TOKEN \
-            normitri-builder:release \
+          docker run --name normitri-release-build -e GITHUB_TOKEN normitri-builder:release \
             bash -c './scripts/build_nomitri.sh all && ctest --test-dir build --output-on-failure -C Release'
+          docker cp normitri-release-build:/src/build ./build
+          docker rm normitri-release-build
 
       - name: Prepare release artifacts
         run: |

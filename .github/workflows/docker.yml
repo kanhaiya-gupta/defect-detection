@@ -37,11 +37,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker run --rm \
-            -v "$PWD:/src" \
-            -w /src \
-            -e GITHUB_TOKEN \
-            normitri-builder:ci \
+          docker run --rm -e GITHUB_TOKEN normitri-builder:ci \
             bash -c './scripts/build_nomitri.sh all && ctest --test-dir build --output-on-failure -C Release'
 
       - name: Summary

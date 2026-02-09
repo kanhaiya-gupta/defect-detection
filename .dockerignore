@@ -1,0 +1,10 @@
+# Avoid copying build artifacts and Conan cache into the image
+build/
+.conan/
+*.pyc
+__pycache__/
+.git/
+.gitignore
+*.md
+docs/
+.github/

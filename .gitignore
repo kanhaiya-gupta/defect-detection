@@ -1,0 +1,42 @@
+# Build and Conan
+build/
+release/
+.conan2/
+conan.lock
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.user
+*.suo
+*.sln.docstates
+
+# Visual Studio
+.vs/
+x64/
+Debug/
+Release/
+*.vcxproj.user
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python (scripts)
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# Logs and cache
+*.log
+.cache/
+
+# Optional: generated PNGs from Mermaid (uncomment if you don't commit them)
+# docs/flowchart_images/*.png

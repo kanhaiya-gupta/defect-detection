@@ -1,0 +1,11 @@
+# NormitriConfig.cmake — Generated for find_package(Normitri)
+# Downstream must have OpenCV available (Normitri::normitri_vision links OpenCV).
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(OpenCV REQUIRED)
+
+include("${CMAKE_CURRENT_LIST_DIR}/NormitriTargets.cmake")
+
+# Optional: check_required_components(Normitri) when components are defined

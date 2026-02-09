@@ -312,4 +312,28 @@ If you need 4.9.x or 4.10+ later, try a newer Conan recipe or a different OpenCV
 
 ---
 
-*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators, opencv 4.9.0 sha256 workaround).*
+## 9. GitHub Actions: xorg/system permission denied (apt-get)
+
+### Problem
+
+On GitHub Actions, `conan install` fails with:
+
+```text
+E: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)
+ERROR: xorg/system: Error in system_requirements() method
+ConanException: Command 'apt-get update' failed
+```
+
+OpenCV (with Wayland enabled by default) pulls in **wayland** → **xkbcommon** → **xorg/system**. The Conan **xorg/system** recipe runs `apt-get update` and `apt install` in `system_requirements()` **without sudo**, so on GitHub’s runner (non-root) the command fails.
+
+### Solution
+
+**conanfile.txt** was updated to set **opencv/*:with_wayland=False**. That removes the wayland/xkbcommon/xorg dependency chain for OpenCV. Normitri only needs core/imgproc/imgcodecs (headless); it does not need a display backend. After this change, Conan no longer triggers xorg/system’s system_requirements() in CI.
+
+If you re-enable Wayland later (e.g. for a GUI build), install the xorg/system packages in the workflow with **sudo** before running Conan (e.g. in “Install CMake and system deps”):  
+`sudo apt-get install -y libx11-dev libx11-xcb-dev libfontenc-dev libice-dev libsm-dev libxau-dev libxaw7-dev xkb-data`  
+and ensure the job has permission to run `apt-get` (Conan’s xorg recipe may still try; see [conan-center-index#12094](https://github.com/conan-io/conan-center-index/issues/12094)).
+
+---
+
+*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators, opencv 4.9.0 sha256 workaround, opencv with_wayland=False for CI).*

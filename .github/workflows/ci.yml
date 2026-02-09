@@ -51,7 +51,7 @@ jobs:
             libxrandr-dev libgl1-mesa-dev libdrm-dev
 
       - name: Set up Conan
-        uses: conan-io/setup-conan@v2
+        uses: conan-io/setup-conan@v1
         with:
           version: "2"
           cache_packages: true

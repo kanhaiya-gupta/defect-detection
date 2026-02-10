@@ -39,6 +39,11 @@ jobs:
           else
             # Clang uses libstdc++; install g++-13 so libstdc++13 (with C++23 std::expected) is available
             sudo apt-get install -y clang-18 g++-13
+            # Make GCC 13 the default so Clang picks up libstdc++13 (required for std::expected)
+            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100
+            sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
+            sudo update-alternatives --set gcc /usr/bin/gcc-13
+            sudo update-alternatives --set g++ /usr/bin/g++-13
           fi
           echo "CC=${{ matrix.cc }}" >> $GITHUB_ENV
           echo "CXX=${{ matrix.cxx }}" >> $GITHUB_ENV
@@ -79,9 +84,12 @@ jobs:
             -c tools.system.package_manager:mode=install
 
       - name: Configure and build
-        env:
-          NORMITRI_CMAKE_ARGS: -DNORMITRI_WARNINGS_AS_ERRORS=ON
         run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            export NORMITRI_CMAKE_ARGS="-DNORMITRI_WARNINGS_AS_ERRORS=ON -DCMAKE_CXX_FLAGS=--gcc-toolchain=/usr -DCMAKE_EXE_LINKER_FLAGS=--gcc-toolchain=/usr"
+          else
+            export NORMITRI_CMAKE_ARGS="-DNORMITRI_WARNINGS_AS_ERRORS=ON"
+          fi
           bash scripts/build_nomitri.sh build
 
       - name: Run tests

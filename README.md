@@ -30,6 +30,8 @@ flowchart LR
 
 Batches of frames can run in parallel via `run_pipeline_batch_parallel`. More diagrams: [docs/workflow.md](docs/workflow.md).
 
+**Note — inference is a mock by default:** The CLI and pipeline currently use a **mock inference backend** that ignores image content and always returns the same synthetic defect (e.g. one “WrongItem”). So running on different images (good vs defective) will show the same output until a **real backend** (ONNX, TensorRT) is implemented. Preprocessing (resize, normalize, color convert) runs on real pixels; only the inference step is simulated. See [Implementation plan](docs/implementation_plan.md) for how to add real defect detection.
+
 ---
 
 ## Quick start

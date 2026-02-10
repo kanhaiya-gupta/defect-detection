@@ -336,4 +336,31 @@ and ensure the job has permission to run `apt-get` (Conan’s xorg recipe may st
 
 ---
 
-*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators, opencv 4.9.0 sha256 workaround, opencv with_wayland=False for CI).*
+## 10. CI: Clang build — std::expected not found
+
+### Problem
+
+On GitHub Actions, the **GCC** job passes but the **Clang** job fails with:
+
+```text
+error: no template named 'expected' in namespace 'std'
+```
+
+`std::expected` is a C++23 library feature. The code already uses `#include <expected>` and the project is built with C++23.
+
+### Cause
+
+Clang on Linux uses **libstdc++** from the system GCC. If the runner only has Clang installed (and no or an older GCC), the available libstdc++ may not provide C++23’s `<expected>`. `std::expected` is implemented in **libstdc++ from GCC 13** onward.
+
+### Solution
+
+In the CI workflow, when installing the **Clang** compiler, also install **g++-13** so that libstdc++13 (with C++23 support) is present. Clang will then use that standard library and `<expected>` is found.
+
+```yaml
+# Clang job: install clang-18 and g++-13
+sudo apt-get install -y clang-18 g++-13
+```
+
+---
+
+*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators, opencv 4.9.0 sha256 workaround, opencv with_wayland=False for CI, CI Clang + g++-13 for std::expected).*

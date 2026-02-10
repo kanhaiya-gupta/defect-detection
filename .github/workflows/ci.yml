@@ -33,12 +33,12 @@ jobs:
 
       - name: Install compiler (${{ matrix.compiler }})
         run: |
+          sudo apt-get update -qq
           if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            sudo apt-get update -qq
             sudo apt-get install -y gcc-13 g++-13
           else
-            sudo apt-get update -qq
-            sudo apt-get install -y clang-18
+            # Clang uses libstdc++; install g++-13 so libstdc++13 (with C++23 std::expected) is available
+            sudo apt-get install -y clang-18 g++-13
           fi
           echo "CC=${{ matrix.cc }}" >> $GITHUB_ENV
           echo "CXX=${{ matrix.cxx }}" >> $GITHUB_ENV

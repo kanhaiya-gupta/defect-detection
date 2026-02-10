@@ -25,6 +25,7 @@ The pipeline is designed for **edge deployment** (e.g. at POS or in-store) so de
 | [Development](development.md) | Coding standards, module contents (core/vision/app), testing, and CI |
 | [Local CI testing (act)](act-local-testing.md) | Run GitHub Actions workflows locally with `act` before pushing |
 | [Detection efficiency](detection-efficiency.md) | Research summary: detection by item type/category/price; design implications before code |
+| [**Implementation plan**](implementation_plan.md) | Plan to replace mock inference with a real backend (ONNX/TensorRT) for actual defect detection |
 | [API Reference](api-reference.md) | Core types and pipeline interfaces |
 
 ## Project Aim
@@ -48,3 +49,4 @@ This project demonstrates skills relevant to **Edge AI and Computer Vision** rol
 - [Running tests](development.md#testing) — Test suite and coverage
 - [Local CI with act](act-local-testing.md) — Test workflows locally before pushing
 - [Detection efficiency & product focus](detection-efficiency.md) — Expensive vs cheap, categories, what to design for before code
+- [Implementation plan (real inference)](implementation_plan.md) — Replacing the mock backend with ONNX/TensorRT

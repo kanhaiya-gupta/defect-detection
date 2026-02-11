@@ -58,8 +58,9 @@ struct TensorRTInferenceBackend::Impl {
   std::vector<nvinfer1::DataType> output_dtypes;
 
   bool use_yolo_single_output{false};
-  int num_bindings{0};
-  int input_binding_index{0};
+  int num_io_tensors{0};
+  int input_io_index{0};
+  std::vector<std::string> io_tensor_names;
 };
 
 TensorRTInferenceBackend::TensorRTInferenceBackend(std::string engine_path) : impl_(std::make_unique<Impl>()) {
@@ -87,46 +88,58 @@ TensorRTInferenceBackend::TensorRTInferenceBackend(std::string engine_path) : im
     throw std::runtime_error("TensorRTInferenceBackend: createExecutionContext failed");
   }
 
-  impl_->num_bindings = impl_->engine->getNbBindings();
-  if (impl_->num_bindings < 1) {
-    throw std::runtime_error("TensorRTInferenceBackend: engine has no bindings");
+  impl_->num_io_tensors = impl_->engine->getNbIOTensors();
+  if (impl_->num_io_tensors < 1) {
+    throw std::runtime_error("TensorRTInferenceBackend: engine has no IO tensors");
   }
 
-  // Find input binding (first binding that is input)
-  for (int i = 0; i < impl_->num_bindings; ++i) {
-    if (impl_->engine->bindingIsInput(i)) {
-      impl_->input_binding_index = i;
+  impl_->io_tensor_names.resize(static_cast<std::size_t>(impl_->num_io_tensors));
+  for (int i = 0; i < impl_->num_io_tensors; ++i) {
+    const char* name = impl_->engine->getIOTensorName(i);
+    impl_->io_tensor_names[static_cast<std::size_t>(i)] = (name != nullptr) ? name : "";
+  }
+
+  // Find input tensor (first IO tensor that is input)
+  for (int i = 0; i < impl_->num_io_tensors; ++i) {
+    if (impl_->engine->getTensorIOMode(impl_->io_tensor_names[static_cast<std::size_t>(i)].c_str()) ==
+        nvinfer1::TensorIOMode::kINPUT) {
+      impl_->input_io_index = i;
       break;
     }
   }
-  nvinfer1::Dims dims = impl_->engine->getBindingDimensions(impl_->input_binding_index);
+
+  const std::string& input_name = impl_->io_tensor_names[static_cast<std::size_t>(impl_->input_io_index)];
+  nvinfer1::Dims dims = impl_->engine->getTensorShape(input_name.c_str());
   if (dims.nbDims != 4) {
     throw std::runtime_error("TensorRTInferenceBackend: expected 4D input (NCHW)");
   }
-  // NCHW: dims.d[0]=N, d[1]=C, d[2]=H, d[3]=W
-  const int n = dims.d[0] <= 0 ? 1 : dims.d[0];
-  const int c = dims.d[1] <= 0 ? kNumChannels : dims.d[1];
-  const int h = dims.d[2] <= 0 ? 640 : dims.d[2];
-  const int w = dims.d[3] <= 0 ? 640 : dims.d[3];
+  // NCHW: dims.d[0]=N, d[1]=C, d[2]=H, d[3]=W (TensorRT 10 may use int64 in Dims; cast for our use)
+  const int n = (dims.d[0] <= 0) ? 1 : static_cast<int>(dims.d[0]);
+  const int c = (dims.d[1] <= 0) ? kNumChannels : static_cast<int>(dims.d[1]);
+  const int h = (dims.d[2] <= 0) ? 640 : static_cast<int>(dims.d[2]);
+  const int w = (dims.d[3] <= 0) ? 640 : static_cast<int>(dims.d[3]);
   if (c != kNumChannels) {
     throw std::runtime_error("TensorRTInferenceBackend: expected 3-channel input");
   }
   impl_->input_height = static_cast<std::uint32_t>(h);
   impl_->input_width = static_cast<std::uint32_t>(w);
-  impl_->input_num_floats = static_cast<std::size_t>(n) * c * h * w;
+  impl_->input_num_floats = static_cast<std::size_t>(n) * static_cast<std::size_t>(c) * static_cast<std::size_t>(h) *
+                            static_cast<std::size_t>(w);
 
-  impl_->device_buffers.resize(static_cast<std::size_t>(impl_->num_bindings), nullptr);
-  impl_->host_output_buffers.resize(static_cast<std::size_t>(impl_->num_bindings));
-  impl_->output_num_elements.resize(static_cast<std::size_t>(impl_->num_bindings), 0);
-  impl_->output_dtypes.resize(static_cast<std::size_t>(impl_->num_bindings), nvinfer1::DataType::kFLOAT);
+  impl_->device_buffers.resize(static_cast<std::size_t>(impl_->num_io_tensors), nullptr);
+  impl_->host_output_buffers.resize(static_cast<std::size_t>(impl_->num_io_tensors));
+  impl_->output_num_elements.resize(static_cast<std::size_t>(impl_->num_io_tensors), 0);
+  impl_->output_dtypes.resize(static_cast<std::size_t>(impl_->num_io_tensors), nvinfer1::DataType::kFLOAT);
 
-  for (int i = 0; i < impl_->num_bindings; ++i) {
-    nvinfer1::Dims d = impl_->engine->getBindingDimensions(i);
-    nvinfer1::DataType dt = impl_->engine->getBindingDataType(i);
+  for (int i = 0; i < impl_->num_io_tensors; ++i) {
+    const std::string& name = impl_->io_tensor_names[static_cast<std::size_t>(i)];
+    nvinfer1::Dims d = impl_->engine->getTensorShape(name.c_str());
+    nvinfer1::DataType dt = impl_->engine->getTensorDataType(name.c_str());
     std::size_t element_size = (dt == nvinfer1::DataType::kFLOAT) ? sizeof(float) : sizeof(int64_t);
     std::size_t num = 1;
     for (int j = 0; j < d.nbDims; ++j) {
-      num *= static_cast<std::size_t>(d.d[j] > 0 ? d.d[j] : 1);
+      const int64_t dim_val = (d.d[j] > 0) ? d.d[j] : 1;
+      num *= static_cast<std::size_t>(dim_val);
     }
     impl_->output_num_elements[static_cast<std::size_t>(i)] = num;
     impl_->output_dtypes[static_cast<std::size_t>(i)] = dt;
@@ -134,15 +147,15 @@ TensorRTInferenceBackend::TensorRTInferenceBackend(std::string engine_path) : im
     void* ptr = nullptr;
     cudaError_t err = cudaMalloc(&ptr, bytes);
     if (err != cudaSuccess) {
-      throw std::runtime_error("TensorRTInferenceBackend: cudaMalloc failed for binding " + std::to_string(i));
+      throw std::runtime_error("TensorRTInferenceBackend: cudaMalloc failed for tensor " + name);
     }
     impl_->device_buffers[static_cast<std::size_t>(i)] = ptr;
-    if (!impl_->engine->bindingIsInput(i)) {
+    if (impl_->engine->getTensorIOMode(name.c_str()) != nvinfer1::TensorIOMode::kINPUT) {
       impl_->host_output_buffers[static_cast<std::size_t>(i)].resize(bytes);
     }
   }
 
-  impl_->use_yolo_single_output = (impl_->num_bindings == 2);
+  impl_->use_yolo_single_output = (impl_->num_io_tensors == 2);
   impl_->nchw_buffer.resize(impl_->input_num_floats);
 }
 
@@ -186,7 +199,7 @@ TensorRTInferenceBackend::infer(const normitri::core::Frame& input) {
   const float* src = reinterpret_cast<const float*>(input.data().data());
   HwcToNchw(src, h, w, impl_->nchw_buffer.data());
 
-  cudaError_t err = cudaMemcpy(impl_->device_buffers[static_cast<std::size_t>(impl_->input_binding_index)],
+  cudaError_t err = cudaMemcpy(impl_->device_buffers[static_cast<std::size_t>(impl_->input_io_index)],
                               impl_->nchw_buffer.data(),
                               impl_->input_num_floats * sizeof(float),
                               cudaMemcpyHostToDevice);
@@ -201,8 +214,11 @@ TensorRTInferenceBackend::infer(const normitri::core::Frame& input) {
   }
 
   // Copy outputs back to host
-  for (int i = 0; i < impl_->num_bindings; ++i) {
-    if (impl_->engine->bindingIsInput(i)) continue;
+  for (int i = 0; i < impl_->num_io_tensors; ++i) {
+    if (impl_->engine->getTensorIOMode(impl_->io_tensor_names[static_cast<std::size_t>(i)].c_str()) ==
+        nvinfer1::TensorIOMode::kINPUT) {
+      continue;
+    }
     std::size_t idx = static_cast<std::size_t>(i);
     std::size_t num = impl_->output_num_elements[idx];
     nvinfer1::DataType dt = impl_->output_dtypes[idx];
@@ -214,8 +230,8 @@ TensorRTInferenceBackend::infer(const normitri::core::Frame& input) {
   }
 
   InferenceResult result;
-  const int output_binding_index = impl_->input_binding_index == 0 ? 1 : 0;
-  const std::size_t out_idx = static_cast<std::size_t>(output_binding_index);
+  const int output_io_index = impl_->input_io_index == 0 ? 1 : 0;
+  const std::size_t out_idx = static_cast<std::size_t>(output_io_index);
 
   if (impl_->use_yolo_single_output) {
     const float* data = reinterpret_cast<const float*>(impl_->host_output_buffers[out_idx].data());
@@ -225,7 +241,8 @@ TensorRTInferenceBackend::infer(const normitri::core::Frame& input) {
     }
     std::size_t num_det = n / 6;
     bool rows_are_n6 = true;
-    nvinfer1::Dims d = impl_->engine->getBindingDimensions(output_binding_index);
+    nvinfer1::Dims d =
+        impl_->engine->getTensorShape(impl_->io_tensor_names[out_idx].c_str());
     if (d.nbDims == 3 && d.d[1] == 6) {
       num_det = static_cast<std::size_t>(d.d[2]);
       rows_are_n6 = false;
@@ -236,7 +253,7 @@ TensorRTInferenceBackend::infer(const normitri::core::Frame& input) {
     result.boxes.reserve(num_det * 4);
     result.scores.reserve(num_det);
     result.class_ids.reserve(num_det);
-    const std::int64_t stride = rows_are_n6 ? 6 : static_cast<std::int64_t>(num_det);
+    const std::size_t stride_sz = rows_are_n6 ? 6 : num_det;
     for (std::size_t i = 0; i < num_det; ++i) {
       if (rows_are_n6) {
         const float* row = data + i * 6;
@@ -247,19 +264,19 @@ TensorRTInferenceBackend::infer(const normitri::core::Frame& input) {
         result.scores.push_back(row[4]);
         result.class_ids.push_back(static_cast<std::int64_t>(row[5]));
       } else {
-        result.boxes.push_back(data[0 * stride + i]);
-        result.boxes.push_back(data[1 * stride + i]);
-        result.boxes.push_back(data[2 * stride + i]);
-        result.boxes.push_back(data[3 * stride + i]);
-        result.scores.push_back(data[4 * stride + i]);
-        result.class_ids.push_back(static_cast<std::int64_t>(data[5 * stride + i]));
+        result.boxes.push_back(data[0 * stride_sz + i]);
+        result.boxes.push_back(data[1 * stride_sz + i]);
+        result.boxes.push_back(data[2 * stride_sz + i]);
+        result.boxes.push_back(data[3 * stride_sz + i]);
+        result.scores.push_back(data[4 * stride_sz + i]);
+        result.class_ids.push_back(static_cast<std::int64_t>(data[5 * stride_sz + i]));
       }
     }
     return result;
   }
 
-  // Three-output path: assume bindings 1, 2, 3 are boxes, scores, class_ids
-  if (impl_->num_bindings < 4) {
+  // Three-output path: assume IO indices 1, 2, 3 are boxes, scores, class_ids
+  if (impl_->num_io_tensors < 4) {
     return std::unexpected(normitri::core::PipelineError::InferenceFailed);
   }
   const float* boxes_data = reinterpret_cast<const float*>(impl_->host_output_buffers[1].data());

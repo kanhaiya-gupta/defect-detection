@@ -15,6 +15,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Auto-detect TRT_DIR if unset: use TensorRT-* directory in repo root (tar install)
+if [ -z "${TRT_DIR:-}" ]; then
+  for d in "$REPO_ROOT"/TensorRT-*/bin; do
+    if [ -x "${d}/trtexec" ] 2>/dev/null; then
+      TRT_DIR="$(cd "$d/.." && pwd)"
+      break
+    fi
+  done
+fi
+
 # Default ONNX path (from download_onnx_models.sh default)
 DEFAULT_ONNX="$REPO_ROOT/models/onnx-community__yolov10n/onnx/model.onnx"
 

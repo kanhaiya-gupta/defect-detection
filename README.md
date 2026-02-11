@@ -8,14 +8,7 @@ Detects wrong item, wrong quantity, quality/expiry, and process errors (e.g. not
 
 ## Pipeline workflow
 
-```mermaid
-flowchart LR
-    Img["🖼️ Image"] --> Resize["Resize"] --> Normalize["Normalize"] --> Color["Color convert"]
-    Color --> Infer["Inference<br/>ONNX / TensorRT / Mock"]
-    Infer --> Decode["Decode"]
-    Decode --> Result["DefectResult"]
-    Result --> Out["Alerts / POS / Dashboard"]
-```
+![Single-frame pipeline](docs/flowchart_images/single_frame_pipeline.png)
 
 | Step | What it does |
 |------|----------------|

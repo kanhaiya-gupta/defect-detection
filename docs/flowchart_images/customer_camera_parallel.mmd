@@ -1,0 +1,31 @@
+%% Customer / camera-level: one pipeline (and backend) per customer or per camera. Recommended for production (many customers/cameras). See threading-and-memory-management.md.
+flowchart TD
+    subgraph Sources["Input sources"]
+        Cam1["📷 Camera 1"]
+        Cam2["📷 Camera 2"]
+        CamN["📷 Camera N"]
+    end
+
+    subgraph Routing["Application: route by camera_id"]
+        R1["Pipeline₁"]
+        R2["Pipeline₂"]
+        RN["Pipelineₙ"]
+    end
+
+    Cam1 --> R1
+    Cam2 --> R2
+    CamN --> RN
+
+    R1 --> Run1["run_pipeline(Pipeline₁, frame)"]
+    R2 --> Run2["run_pipeline(Pipeline₂, frame)"]
+    RN --> RunN["run_pipeline(Pipelineₙ, frame)"]
+
+    Run1 --> CB1["Callback(DefectResult)<br/>+ camera_id"]
+    Run2 --> CB2["Callback(DefectResult)<br/>+ camera_id"]
+    RunN --> CBN["Callback(DefectResult)<br/>+ camera_id"]
+
+    CB1 --> Out["Collect / Alert / Store"]
+    CB2 --> Out
+    CBN --> Out
+
+    note["Each pipeline used from one thread.<br/>No shared backend; scales by adding pipelines."]

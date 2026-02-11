@@ -100,6 +100,22 @@ ctest --test-dir build
 ./build/tests/normitri_tests
 ```
 
+**Why are some tests skipped?**  
+Several ONNX and TensorRT backend tests need a real model file. They are **skipped by default** (no env vars) so CI and machines without models/GPU still pass. To run them when you have the models, set the paths and run ctest **from the repo root**:
+
+```bash
+# Optional: run ONNX backend tests (needs .onnx model)
+export NORMITRI_TEST_ONNX_MODEL=models/onnx-community__yolov10n/onnx/model.onnx
+
+# Optional: run TensorRT backend tests (needs .engine + GPU; set LD_LIBRARY_PATH if using tar install)
+export LD_LIBRARY_PATH="$TRT_DIR/lib:$LD_LIBRARY_PATH"   # if using TensorRT from tar
+export NORMITRI_TEST_TENSORRT_ENGINE=models/onnx-community__yolov10n/engine/model.engine
+
+ctest --test-dir build
+```
+
+Vision tests run with **working directory = repo root**, so relative paths like `models/...` are correct when you run `ctest --test-dir build` from the repo root. If the env var is unset or the file is missing, those tests report **Skipped**; they are not failures. With both variables set (and the engine built), all 36 tests run (no skips).
+
 ## CMake Options
 
 | Option | Default | Description |
@@ -186,6 +202,65 @@ The engine file (`.engine`) must be **built from an ONNX model on the target GPU
   trtexec --version
   ```
   Then run `./scripts/build_tensorrt_engine.sh` (or set `TRTEXEC=$TRT_DIR/bin/trtexec` if the script does not find `trtexec`). To use the TensorRT backend in the app, point CMake at this install, e.g. `export TensorRT_ROOT=$TRT_DIR` before running `./scripts/build_nomitri.sh build`.
+
+### TensorRT: Reproducible setup and troubleshooting
+
+Use this checklist to reproduce the TensorRT build and run, or to fix errors in the future.
+
+**1. TensorRT version**
+
+- The code uses the **TensorRT 10** IO API (`getNbIOTensors`, `getIOTensorName`, `getTensorShape`, `getTensorDataType`, `getTensorIOMode`). The old “bindings” API (`getNbBindings`, `bindingIsInput`, `getBindingDimensions`, `getBindingDataType`) was removed in TensorRT 10.
+- If you see errors like **`'class nvinfer1::ICudaEngine' has no member named 'getNbBindings'`** or **`bindingIsInput`** / **`getBindingDimensions`** / **`getBindingDataType'`**, you are building against TensorRT 10 headers; the code in this repo is already updated for that. Ensure you have the latest `tensorrt_inference_backend.cpp` and that no local patch reverted to the old API.
+
+**2. Environment (tar install)**
+
+From the repo root, after extracting the TensorRT tar:
+
+```bash
+export TRT_DIR="$(pwd)/TensorRT-10.15.1.29"   # or your extract path
+export PATH="$TRT_DIR/bin:$PATH"
+export LD_LIBRARY_PATH="$TRT_DIR/lib:$LD_LIBRARY_PATH"
+```
+
+- **Build time:** So CMake finds TensorRT and CUDA, set `TensorRT_ROOT` (and ensure CUDA is on the system or set `CUDAToolkit_ROOT`):  
+  `export TensorRT_ROOT="$TRT_DIR"` before `./scripts/build_nomitri.sh build` or `cmake -B build ...`.
+- **Run time:** The CLI needs TensorRT shared libs. Always set **`LD_LIBRARY_PATH`** when running the app, e.g.:  
+  `export LD_LIBRARY_PATH="$TRT_DIR/lib:$LD_LIBRARY_PATH"`  
+  then  
+  `./build/apps/normitri-cli/normitri_cli --backend tensorrt --model ...`.
+
+**3. Build the engine (once per GPU / TensorRT version)**
+
+- From repo root, with `trtexec` on `PATH` (see step 2):
+  - **Script:** `./scripts/build_tensorrt_engine.sh` (default ONNX: `models/onnx-community__yolov10n/onnx/model.onnx` → engine under `models/onnx-community__yolov10n/engine/model.engine`).
+  - **Or direct:**  
+    `trtexec --onnx=models/onnx-community__yolov10n/onnx/model.onnx --saveEngine=models/onnx-community__yolov10n/engine/model.engine`
+- Engine is GPU- and TensorRT-version-specific; do not copy `.engine` between different GPUs or TRT versions.
+
+**4. Build the app with TensorRT**
+
+```bash
+export TensorRT_ROOT="$TRT_DIR"   # if using tar install
+./scripts/build_nomitri.sh install
+./scripts/build_nomitri.sh build
+```
+
+Or with CMake only: `cmake -B build -DTensorRT_ROOT="$TRT_DIR" ...` then `cmake --build build`. CUDA headers must be available (e.g. system CUDA or `CUDAToolkit_ROOT`); CMake requires `cuda_runtime_api.h` when TensorRT is enabled.
+
+**5. Run the CLI with TensorRT**
+
+```bash
+export LD_LIBRARY_PATH="$TRT_DIR/lib:$LD_LIBRARY_PATH"
+./build/apps/normitri-cli/normitri_cli --backend tensorrt \
+  --model models/onnx-community__yolov10n/engine/model.engine \
+  --input data/images/defective_fruits.jpg
+```
+
+Expected: output like `frame_id=0 defects=N` and lines with class, confidence, and bbox. If you see “error while loading shared libraries” or “symbol not found”, fix `LD_LIBRARY_PATH` (step 2).
+
+**6. Linker warnings (optional)**
+
+- **`QgemmU8S8KernelAmx.S.o: missing .note.GNU-stack section implies executable stack`** — Comes from a dependency (e.g. ONNX Runtime), not from our code. Safe to ignore. To suppress when linking the CLI: add `-Wl,--no-warn-execstack` for the app target in CMake if desired.
 </think>
 Updated the manual TensorRT section in `docs/building.md` with the correct options:
 <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
@@ -266,12 +341,17 @@ Many Lightning images already have Conan; if `conan --version` works, skip `pip 
 ctest --test-dir build
 ```
 
-To run TensorRT backend tests (when built), set the engine path and run the vision tests:
+To run **all** tests including ONNX and TensorRT backend tests (when you have the models), set the env vars and run ctest from the repo root:
 
 ```bash
-export NORMITRI_TEST_TENSORRT_ENGINE=/path/to/model.engine
-./build/tests/normitri_vision_tests
+export NORMITRI_TEST_ONNX_MODEL=models/onnx-community__yolov10n/onnx/model.onnx
+export NORMITRI_TEST_TENSORRT_ENGINE=models/onnx-community__yolov10n/engine/model.engine
+# If using TensorRT from tar, also:
+export LD_LIBRARY_PATH="$TRT_DIR/lib:$LD_LIBRARY_PATH"
+ctest --test-dir build
 ```
+
+Without these variables, the ONNX and TensorRT tests that need a real model are skipped (so CI without GPU/models still passes).
 
 ### 6. Tips
 

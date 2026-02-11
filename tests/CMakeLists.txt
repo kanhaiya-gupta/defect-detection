@@ -34,7 +34,8 @@ target_link_libraries(normitri_vision_tests PRIVATE
 )
 target_include_directories(normitri_vision_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
 normitri_enable_warnings(normitri_vision_tests)
-gtest_discover_tests(normitri_vision_tests)
+# Run from repo root so NORMITRI_TEST_ONNX_MODEL / NORMITRI_TEST_TENSORRT_ENGINE paths like models/... resolve
+gtest_discover_tests(normitri_vision_tests WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # Unit tests: app (TBB multi-camera runner), only when TBB is available
 if(NORMITRI_TBB_AVAILABLE)

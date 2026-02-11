@@ -29,6 +29,17 @@ Unlike ONNX, **TensorRT `.engine` files are not downloaded**. They are **built o
 
 If you don’t have a GPU or TensorRT, use the **ONNX** backend with the same `.onnx` file (CPU or ONNX Runtime with CUDA). No `.engine` is required for ONNX.
 
+**Reproducing TensorRT engine and run:** For step-by-step env vars, build, and run (and troubleshooting e.g. TensorRT 10 API or missing libs), see [TensorRT: Reproducible setup and troubleshooting](../docs/building.md#tensorrt-reproducible-setup-and-troubleshooting) in the building guide. Minimal repro from repo root:
+
+```bash
+export TRT_DIR="$(pwd)/TensorRT-10.15.1.29"
+export PATH="$TRT_DIR/bin:$PATH"
+export LD_LIBRARY_PATH="$TRT_DIR/lib:$LD_LIBRARY_PATH"
+./scripts/build_tensorrt_engine.sh
+# Then run (same LD_LIBRARY_PATH):
+./build/apps/normitri-cli/normitri_cli --backend tensorrt --model models/onnx-community__yolov10n/engine/model.engine --input data/images/defective_fruits.jpg
+```
+
 ## What to put here
 
 - **ONNX models** (`.onnx`) — e.g. `detector.onnx`, or a file downloaded from Hugging Face / the model zoo. Or place the file(s) your ML team provides or that you export from your training pipeline.

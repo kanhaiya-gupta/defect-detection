@@ -1,5 +1,6 @@
+%% Frame-level: one shared pipeline, one queue of frames. See also customer_camera_parallel.mmd for per-camera deployment.
 flowchart TD
-    Frames["📦 Batch of Frames"]
+    Frames["📦 Batch of Frames<br/>(single shared queue)"]
     Frames --> Choice{"Run mode?"}
 
     Choice -->|Sequential| Seq["run_pipeline_batch<br/>One frame after another"]

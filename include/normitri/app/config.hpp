@@ -7,9 +7,16 @@
 
 namespace normitri::app {
 
+/// Inference backend type: mock (synthetic) or onnx (real model).
+enum class InferenceBackendType {
+  Mock,
+  Onnx,
+};
+
 /// Pipeline configuration: model path, stages, thresholds.
 struct PipelineConfig {
   std::string model_path;
+  InferenceBackendType backend_type{InferenceBackendType::Mock};
   std::uint32_t resize_width{640};
   std::uint32_t resize_height{640};
   float normalize_mean{0.f};

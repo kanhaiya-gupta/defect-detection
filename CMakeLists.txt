@@ -47,6 +47,7 @@ endif()
 unset(_conan_generators)
 
 find_package(OpenCV REQUIRED)
+find_package(onnxruntime REQUIRED)
 
 if(NORMITRI_BUILD_TESTS)
   find_package(GTest REQUIRED)
@@ -92,6 +93,7 @@ add_library(normitri_vision
   src/vision/defect_decoder.cpp
   src/vision/defect_detection_stage.cpp
   src/vision/mock_inference_backend.cpp
+  src/vision/onnx_inference_backend.cpp
 )
 target_include_directories(normitri_vision
   PUBLIC
@@ -101,7 +103,7 @@ target_include_directories(normitri_vision
     "${CMAKE_CURRENT_SOURCE_DIR}/src/vision"
     ${OpenCV_INCLUDE_DIRS}
 )
-target_link_libraries(normitri_vision PUBLIC normitri_core ${OpenCV_LIBS})
+target_link_libraries(normitri_vision PUBLIC normitri_core ${OpenCV_LIBS} onnxruntime::onnxruntime)
 target_compile_features(normitri_vision PUBLIC cxx_std_23)
 normitri_enable_warnings(normitri_vision)
 

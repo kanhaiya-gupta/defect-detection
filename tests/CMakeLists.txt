@@ -22,6 +22,7 @@ gtest_discover_tests(normitri_core_tests)
 add_executable(normitri_vision_tests
   unit/vision/defect_decoder_test.cpp
   unit/vision/mock_inference_backend_test.cpp
+  unit/vision/onnx_inference_backend_test.cpp
 )
 target_link_libraries(normitri_vision_tests PRIVATE
   normitri_vision

@@ -73,9 +73,16 @@ flowchart TD
 
 ## Batch & parallel execution
 
+Two ways to handle many frames:
+
+- **Frame-level (below):** One shared pipeline, one queue of frames. Use `run_pipeline_batch` (sequential) or `run_pipeline_batch_parallel` (thread pool). All workers share the same backend; backend must be thread-safe or use a single worker.
+- **Customer / camera-level (recommended for many cameras):** One pipeline (and one inference backend) per customer or per camera. Route frames by `camera_id`/`customer_id`; run each pipeline from one thread. See [Threading and memory management](threading-and-memory-management.md#customer-level-or-camera-level-parallelism-recommended-for-production).
+
+### Frame-level: shared pipeline
+
 ```mermaid
 flowchart TD
-    Frames["📦 Batch of Frames"]
+    Frames["📦 Batch of Frames<br/>(single shared queue)"]
     Frames --> Choice{"Run mode?"}
 
     Choice -->|Sequential| Seq["run_pipeline_batch<br/>One frame after another"]
@@ -96,6 +103,41 @@ flowchart TD
     RunP2 --> CB
 
     CB --> Out["Collect / Alert / Store"]
+```
+
+### Customer / camera-level: one pipeline per unit (recommended for production)
+
+```mermaid
+flowchart TD
+    subgraph Sources["Input sources"]
+        Cam1["📷 Camera 1"]
+        Cam2["📷 Camera 2"]
+        CamN["📷 Camera N"]
+    end
+
+    subgraph Routing["Application: route by camera_id"]
+        R1["Pipeline₁"]
+        R2["Pipeline₂"]
+        RN["Pipelineₙ"]
+    end
+
+    Cam1 --> R1
+    Cam2 --> R2
+    CamN --> RN
+
+    R1 --> Run1["run_pipeline(Pipeline₁, frame)"]
+    R2 --> Run2["run_pipeline(Pipeline₂, frame)"]
+    RN --> RunN["run_pipeline(Pipelineₙ, frame)"]
+
+    Run1 --> CB1["Callback(DefectResult)<br/>+ camera_id"]
+    Run2 --> CB2["Callback(DefectResult)<br/>+ camera_id"]
+    RunN --> CBN["Callback(DefectResult)<br/>+ camera_id"]
+
+    CB1 --> Out["Collect / Alert / Store"]
+    CB2 --> Out
+    CBN --> Out
+
+    note["Each pipeline used from one thread.<br/>No shared backend; scales by adding pipelines."]
 ```
 
 ## Where to extend

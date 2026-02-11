@@ -200,6 +200,8 @@ The same can happen for other recipes that fetch sources from GitHub (e.g. when 
 | **libwebp::libwebp target not found** when building OpenCV with Conan | FFmpeg CMake files reference libwebp; OpenCV doesn’t see it | Set `opencv/*:with_ffmpeg=False` in conanfile.txt (see [§6](#6-opencv-conan-build-ffmpeg--libwebp-target-not-found)) |
 | **"Options should be specified as 'pkg/*:option=value'"** in conanfile.txt | Conan 2 requires wildcard form for options | Use `opencv/*:with_ffmpeg=False` not `opencv:with_ffmpeg=False` (see [§6](#6-opencv-conan-build-ffmpeg--libwebp-target-not-found)) |
 | **"No Conan toolchain found"** then **"Could not find OpenCV"** after install | Toolchain/generators under `build/build/Release/generators/` with cmake_layout | Build script checks both toolchain paths; CMakeLists.txt auto-detects generators and sets CMAKE_PREFIX_PATH (see [§7](#7-cmake-could-not-find-opencv-after-conan-install-toolchain-not-used)) |
+| **'Ort::Session' has no member named 'GetInputNames' / 'GetOutputNames'**; **ConstTensorTypeAndShapeInfo** conversion error in `onnx_inference_backend.cpp` | Conan onnxruntime package exposes older C++ API | Use GetInputCount/GetInputNameAllocated and GetOutputCount/GetOutputNameAllocated; use `const auto` for GetTensorTypeAndShapeInfo() (see [§11](#11-onnx-runtime-c-api-session-getinputnames--getoutputnames)) |
+| **OnnxInferenceBackend.ConstructorThrowsWhenFileMissing** test fails: "Expected std::runtime_error" but "throws Ort::Exception" | ONNX Runtime throws `Ort::Exception` when the model file is missing, not `std::runtime_error` | In the test, expect `Ort::Exception` and `#include <onnxruntime_cxx_api.h>` (see [§12](#12-onnx-unit-test-constructor-throws-ortexception)) |
 
 ---
 
@@ -363,4 +365,79 @@ sudo apt-get install -y clang-18 g++-13
 
 ---
 
-*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators, opencv 4.9.0 sha256 workaround, opencv with_wayland=False for CI, CI Clang + g++-13 for std::expected).*
+## 11. ONNX Runtime C++ API: Session GetInputNames / GetOutputNames
+
+### Problem
+
+When building the ONNX backend (`src/vision/onnx_inference_backend.cpp`), the build fails with:
+
+```text
+error: 'struct Ort::Session' has no member named 'GetInputNames'
+error: 'struct Ort::Session' has no member named 'GetOutputNames'
+error: conversion from 'Ort::ConstTensorTypeAndShapeInfo' to non-scalar type 'Ort::TensorTypeAndShapeInfo' requested
+```
+
+### Cause
+
+The **Conan** package for **onnxruntime/1.18.1** (or the headers it ships) may expose an older or different C++ wrapper where:
+
+- `Ort::Session` does **not** provide `GetInputNames()` or `GetOutputNames()` (those exist on `Ort::detail::ConstSessionImpl` in newer docs but may not be on the `Session` typedef in this build).
+- `TypeInfo::GetTensorTypeAndShapeInfo()` returns a **const** type (`Ort::ConstTensorTypeAndShapeInfo`). Assigning it to a non-const `Ort::TensorTypeAndShapeInfo` is invalid.
+
+### Solution
+
+Use the **allocator-based API** that is available on all supported ONNX Runtime C++ versions:
+
+1. **Input name**  
+   Replace `session.GetInputNames()[0]` with:
+   - `session.GetInputCount()` to ensure at least one input.
+   - `session.GetInputNameAllocated(0, allocator).get()` to get the first input name, using `Ort::AllocatorWithDefaultOptions allocator`.
+
+2. **Output names**  
+   Replace `session.GetOutputNames()` with:
+   - `session.GetOutputCount()` to ensure at least three outputs.
+   - For each of the first three indices: `session.GetOutputNameAllocated(i, allocator).get()`, and assign the result to a `std::string` (the `.get()` pointer is valid only until the allocated smart pointer is destroyed; copying into `std::string` preserves the name).
+
+3. **Tensor shape info**  
+   Do not assign the return value of `GetTensorTypeAndShapeInfo()` to a non-const `Ort::TensorTypeAndShapeInfo`. Use **`const auto shape_info = input_type.GetTensorTypeAndShapeInfo();`** so the compiler keeps the const type. Then call `shape_info.GetShape()` as before.
+
+With these changes, the ONNX backend compiles against the Conan onnxruntime package (e.g. in Docker or WSL). If you see a missing `Ort::AllocatorWithDefaultOptions`, the same package may use a different allocator API (e.g. from the session); in that case use the allocator type documented for that ONNX Runtime version.
+
+---
+
+## 12. ONNX unit test: Constructor throws Ort::Exception
+
+### Problem
+
+The unit test **OnnxInferenceBackend.ConstructorThrowsWhenFileMissing** fails with:
+
+```text
+Expected: ... throws an exception of type std::runtime_error.
+  Actual: it throws Ort::Exception with description "Load model from ... failed: ... File doesn't exist".
+```
+
+### Cause
+
+When the ONNX model file is missing, **ONNX Runtime** throws **`Ort::Exception`**, not `std::runtime_error`. The test was written to expect `std::runtime_error` (e.g. from a wrapper), but the backend constructor does not catch `Ort::Exception` and rethrow; it lets it propagate.
+
+### Solution
+
+In **`tests/unit/vision/onnx_inference_backend_test.cpp`**:
+
+1. **Include the ONNX Runtime header** so `Ort::Exception` is defined:
+   ```cpp
+   #include <onnxruntime_cxx_api.h>
+   ```
+
+2. **Expect `Ort::Exception`** in the constructor test:
+   ```cpp
+   EXPECT_THROW(
+       { nv::OnnxInferenceBackend backend("nonexistent_....onnx"); },
+       Ort::Exception);
+   ```
+
+After this change, the test passes when the model file is missing (e.g. in CI).
+
+---
+
+*Last updated to reflect fixes applied in the repo (Dockerfile, build scripts, .gitattributes, conanfile options, Conan toolchain path for cmake_layout, CMakeLists auto-detect of Conan generators, opencv 4.9.0 sha256 workaround, opencv with_wayland=False for CI, CI Clang + g++-13 for std::expected, ONNX Runtime C++ API GetInputNameAllocated/GetOutputNameAllocated and ConstTensorTypeAndShapeInfo, ONNX unit test Ort::Exception for missing model file).*

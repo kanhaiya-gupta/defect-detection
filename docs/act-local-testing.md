@@ -72,7 +72,7 @@ Our workflows use **`runs-on: ubuntu-24.04`**. By default, act does not provide 
 🚧  Skipping unsupported platform -- Try running with `-P ubuntu-24.04=...`
 ```
 
-You **must** pass a Docker image for that platform. Use one of these:
+You **must** pass a Docker image for that platform:
 
 ```bash
 # Option A: act-oriented image (has common Actions preinstalled; may be 22.04)
@@ -82,19 +82,15 @@ You **must** pass a Docker image for that platform. Use one of these:
 -P ubuntu-24.04=ubuntu:24.04
 ```
 
-**Example — run CI locally:**
-```bash
-act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
-```
-
-To avoid typing `-P ...` every time, you can set a default in **`~/.config/act/actrc`**:
+To avoid typing `-P ...` every time, set **`~/.config/act/actrc`**:
 
 ```bash
 mkdir -p ~/.config/act
 echo '-P ubuntu-24.04=catthehacker/ubuntu:act-latest' >> ~/.config/act/actrc
 ```
 
-Then `act workflow_dispatch -W .github/workflows/ci.yml` will use that image.
+Then commands like `act workflow_dispatch -W .github/workflows/clang.yml` and `act workflow_dispatch -W .github/workflows/ci.yml` will use that image.  
+**Note:** CI (`ci.yml`) uses a matrix (gcc + clang); with act that can require extra platform mappings (`ubuntu-24.04-1`, `-2`). To test **only Clang** locally, use **`clang.yml`** (single job, no matrix).
 
 ## Our workflows (trigger-based)
 
@@ -103,6 +99,7 @@ All workflows use `workflow_dispatch` (manual trigger). No inputs except **Relea
 | Workflow   | Job(s)              | What it does |
 |-----------|----------------------|--------------|
 | **CI**    | `build-and-test`     | Matrix: GCC + Clang on Ubuntu. Conan install → build → ctest. |
+| **Clang (local act)** | `build-and-test-clang` | Clang-only build + test; for local act (no matrix). Remove once CI passes. |
 | **Docker**| `docker-build-and-test` | Build image, run `build_nomitri.sh all` + ctest in container. |
 | **Format**| `format-check`       | clang-format check on tracked C/C++. |
 | **CodeQL**| `analyze`            | Conan + build, then CodeQL C++ analysis. **Not recommended with act** (see below). |
@@ -123,10 +120,13 @@ Shows workflow names, job names, and the `workflow_dispatch` event.
 
 ### Dry-run (recommended first)
 
-See what would run **without** executing steps. Add **`-P ubuntu-24.04=catthehacker/ubuntu:act-latest`** if you didn’t set `~/.config/act/actrc`:
+See what would run **without** executing steps. Use **`-P ubuntu-24.04=catthehacker/ubuntu:act-latest`** (or actrc from section 4):
 
 ```bash
-# CI
+# Clang only (single job, works with one -P)
+act workflow_dispatch -W .github/workflows/clang.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n
+
+# CI (both gcc and clang; matrix may need extra -P on some act versions)
 act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n
 
 # Docker
@@ -150,7 +150,10 @@ Runs in Docker; CI and Docker workflows will take time (Conan, build, tests). Us
 # Format (fast)
 act workflow_dispatch -W .github/workflows/format.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
 
-# CI (slow: Conan + build + test, matrix = 2 jobs)
+# Clang only (for local act; single job, one -P is enough)
+act workflow_dispatch -W .github/workflows/clang.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
+
+# CI (slow: both gcc and clang)
 act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
 
 # Docker (slow: build image + build + test)
@@ -175,7 +178,10 @@ act workflow_dispatch -W .github/workflows/format.yml -j format-check -P ubuntu-
 # Only the Docker job
 act workflow_dispatch -W .github/workflows/docker.yml -j docker-build-and-test -P ubuntu-24.04=catthehacker/ubuntu:act-latest
 
-# Only the CI build-and-test job (act may run both gcc and clang matrix cells)
+# Clang only (dedicated workflow, no matrix)
+act workflow_dispatch -W .github/workflows/clang.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
+
+# CI (both compilers)
 act workflow_dispatch -W .github/workflows/ci.yml -j build-and-test -P ubuntu-24.04=catthehacker/ubuntu:act-latest
 ```
 
@@ -196,9 +202,8 @@ act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/u
 
 ## Troubleshooting
 
-**"Skipping unsupported platform -- Try running with `-P ubuntu-24.04=...`"**  
-Our workflows use `ubuntu-24.04`; act has no default image for it. Add:
-`-P ubuntu-24.04=catthehacker/ubuntu:act-latest` to your command, or set it in `~/.config/act/actrc` (see [Platform image for ubuntu-24.04](#4-platform-image-for-ubuntu-2404-required-for-our-workflows)).
+**"Skipping unsupported platform -- Try running with `-P =...`"**  
+Our workflows use `ubuntu-24.04`; act has no default image for it. Add `-P ubuntu-24.04=catthehacker/ubuntu:act-latest` to your command or set it in `~/.config/act/actrc` (see [section 4](#4-platform-image-for-ubuntu-2404-required-for-our-workflows)). For **Clang-only** local testing use `clang.yml` (single job, no matrix).
 
 ## Limitations when running locally
 
@@ -212,19 +217,20 @@ Use act to check that **build, test, and format** steps succeed; for release and
 ## Suggested workflow
 
 1. Edit a workflow (e.g. `.github/workflows/ci.yml`).
-2. Dry-run: `act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n`.
+2. Dry-run: `act workflow_dispatch -W .github/workflows/clang.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n` (Clang only), or same with `ci.yml` for full CI.
 3. If structure looks good, run for real (same `-P`); or run only one job with `-j build-and-test`.
 4. Fix any failures locally, then push and trigger on GitHub if desired.
 
 ## Quick reference
 
-Set once (optional): `echo '-P ubuntu-24.04=catthehacker/ubuntu:act-latest' >> ~/.config/act/actrc`
+Set once: `echo '-P ubuntu-24.04=catthehacker/ubuntu:act-latest' >> ~/.config/act/actrc`
 
 ```bash
 act -l
-act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n
+act workflow_dispatch -W .github/workflows/clang.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n
+act workflow_dispatch -W .github/workflows/clang.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
 act workflow_dispatch -W .github/workflows/format.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
-act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest
+act workflow_dispatch -W .github/workflows/ci.yml -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n
 act workflow_dispatch -W .github/workflows/docker.yml -j docker-build-and-test -P ubuntu-24.04=catthehacker/ubuntu:act-latest
 act workflow_dispatch -W .github/workflows/release.yml --input version=v0.1.0 -P ubuntu-24.04=catthehacker/ubuntu:act-latest -n
 ```

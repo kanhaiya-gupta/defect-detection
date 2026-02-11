@@ -32,6 +32,7 @@ bool parse_line(std::string_view line, std::string& key, std::string& value) {
 PipelineConfig default_config() {
   PipelineConfig c;
   c.model_path = "";
+  c.backend_type = InferenceBackendType::Mock;
   c.resize_width = 640;
   c.resize_height = 640;
   c.normalize_mean = 0.f;
@@ -54,6 +55,10 @@ PipelineConfig load_config(const std::string& path) {
     if (!parse_line(line, key, value)) continue;
 
     if (key == "model_path") c.model_path = value;
+    else if (key == "backend_type") {
+      if (value == "onnx") c.backend_type = InferenceBackendType::Onnx;
+      else if (value == "mock") c.backend_type = InferenceBackendType::Mock;
+    }
     else if (key == "resize_width") c.resize_width = static_cast<std::uint32_t>(std::stoul(value));
     else if (key == "resize_height") c.resize_height = static_cast<std::uint32_t>(std::stoul(value));
     else if (key == "normalize_mean") c.normalize_mean = std::stof(value);

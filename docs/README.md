@@ -25,7 +25,10 @@ The pipeline is designed for **edge deployment** (e.g. at POS or in-store) so de
 | [Development](development.md) | Coding standards, module contents (core/vision/app), testing, and CI |
 | [Local CI testing (act)](act-local-testing.md) | Run GitHub Actions workflows locally with `act` before pushing |
 | [Detection efficiency](detection-efficiency.md) | Research summary: detection by item type/category/price; design implications before code |
+| [**Preprocessing**](preprocessing.md) | OpenCV-based stages (resize, normalize, color), inference contract, and future options (hardware ISPs, GPU) |
 | [**Implementation plan**](implementation_plan.md) | Plan to replace mock inference with a real backend (ONNX/TensorRT) for actual defect detection |
+| [**Inference details**](inference-details.md) | ONNX format vs ONNX Runtime, who trains models, TensorRT vs ONNX Runtime, division of labour |
+| [**Threading and memory management**](threading-and-memory-management.md) | RAII, ownership, pipeline thread safety, batch parallel, backend thread-safety |
 | [API Reference](api-reference.md) | Core types and pipeline interfaces |
 
 ## Project Aim
@@ -44,9 +47,12 @@ This project demonstrates skills relevant to **Edge AI and Computer Vision** rol
 ## Quick Links
 
 - [**Pipeline workflow**](../README.md#pipeline-workflow) — One diagram in root README; [more diagrams](workflow.md) here
+- [Preprocessing](preprocessing.md) — What we have (OpenCV stages) and future (ISPs, GPU)
 - [Getting started](building.md#getting-started) — Build and run
 - [Adding a pipeline stage](architecture.md#pipeline-stages) — Extend the CV pipeline
 - [Running tests](development.md#testing) — Test suite and coverage
 - [Local CI with act](act-local-testing.md) — Test workflows locally before pushing
 - [Detection efficiency & product focus](detection-efficiency.md) — Expensive vs cheap, categories, what to design for before code
 - [Implementation plan (real inference)](implementation_plan.md) — Replacing the mock backend with ONNX/TensorRT
+- [Inference details](inference-details.md) — ONNX vs ONNX Runtime, training vs running, TensorRT comparison
+- [Threading and memory management](threading-and-memory-management.md) — Memory ownership, RAII, pipeline and backend thread safety

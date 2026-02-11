@@ -61,8 +61,12 @@ cmd_build() {
     echo "No Conan toolchain found; using system OpenCV and GTest (run '$0 install' if needed)."
   fi
   echo "Configuring..."
-  EXTRA_CMAKE="${NORMITRI_CMAKE_ARGS:-}"
-  cmake -B "$BUILD_DIR" $TOOLCHAIN -DCMAKE_BUILD_TYPE=Release $EXTRA_CMAKE
+  if [[ -n "${NORMITRI_CMAKE_ARGS:-}" ]]; then
+    # Eval so quoted groups in NORMITRI_CMAKE_ARGS (e.g. -DCMAKE_CXX_FLAGS="...") stay as single args.
+    eval "cmake -B \"$BUILD_DIR\" $TOOLCHAIN -DCMAKE_BUILD_TYPE=Release $NORMITRI_CMAKE_ARGS"
+  else
+    cmake -B "$BUILD_DIR" $TOOLCHAIN -DCMAKE_BUILD_TYPE=Release
+  fi
   echo "Building..."
   cmake --build "$BUILD_DIR"
   echo "Done. Binary: $BUILD_DIR/apps/normitri-cli/normitri_cli (or normitri_cli.exe)"

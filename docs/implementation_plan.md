@@ -56,6 +56,16 @@ Design and gaps: [inference-design-and-gaps.md](inference-design-and-gaps.md).
    - In **normitri-cli** (or app that builds the pipeline): if config says “onnx”, construct **OnnxInferenceBackend** and pass to DefectDetectionStage; else keep MockInferenceBackend.  
    - Ensure **DefectDecoder** is built with the same class→DefectKind map the model uses.
 
+   **How to choose mock vs ONNX (and later TensorRT):**
+   - **Config file**: set `backend_type=mock` or `backend_type=onnx`, and `model_path=/path/to/model.onnx` when using ONNX. Pass the file with `--config <path>`.
+   - **CLI overrides**: `--backend mock` | `--backend onnx` and `--model <path>` override (or supply) backend and model without a config file.
+   - **Default**: if no config and no `--backend`, **mock** is used. For ONNX you must set the backend (via config or `--backend onnx`) and provide a model path (config or `--model`).
+   - When TensorRT is implemented, add `backend_type=tensorrt` / `--backend tensorrt` and a TensorRT engine path.
+
+   **Models: where to put ONNX files, and how many**
+   - **Where to put them:** There is no fixed location. The path is whatever you pass in **config** (`model_path=...`) or on the **CLI** (`--model <path>`). It can be absolute (e.g. `/opt/models/detector.onnx`) or relative to the process current working directory (e.g. `models/detector.onnx`). A common choice is a **`models/`** directory in the repo or in your deployment tree (e.g. `models/detector.onnx`), and then run the CLI from the repo root or set `model_path=models/detector.onnx` in your config. Do not commit large binary models to git if you use repo `models/`; use `.gitignore` or a separate artifact store and copy files into `models/` at deploy time.
+   - **One model per pipeline:** Each pipeline has **one** inference backend, and each backend is constructed with **one** model path. So at any moment, **one pipeline uses one ONNX file**. You can have **100 or more ONNX files** on disk (e.g. one per customer, per product category, or per camera type). In that case you build 100 pipelines (or 100 backend instances), each with a different `model_path` pointing to one of those files. The application layer decides which pipeline (and thus which model) to use for each frame (e.g. by customer_id or camera_id). So: one model per pipeline instance; many files on disk and many pipelines are supported.
+
 5. **Testing**  
    - Unit tests: mock Frame → ONNX backend → check InferenceResult shape and sanity (e.g. num_detections, score range).  
    - Integration: run pipeline with a small ONNX model (or a minimal “identity”-style model) and assert DefectResult reflects model output.  
@@ -67,6 +77,17 @@ Design and gaps: [inference-design-and-gaps.md](inference-design-and-gaps.md).
 - **TensorRT backend**: second implementation of **IInferenceBackend** using TensorRT; same InferenceResult contract.  
 - **infer_batch()**: override in ONNX/TensorRT backend for batched input when using `run_pipeline_batch_parallel`.  
 - **Model lifecycle**: load in factory; call **warmup()** once before first real frame (already in contract).
+
+### Deployment: many customers / cameras
+
+When many customers are scanning or many cameras are feeding frames, structure parallelism at **customer level** or **camera level**, not only at frame level:
+
+- **One pipeline (and one inference backend) per customer or per camera.** Route each incoming frame to the pipeline for that customer/camera; run each pipeline from a single thread (or a small dedicated pool). That avoids shared-backend thread-safety issues, gives isolation and predictable latency per stream, and scales by adding more pipelines.
+- The **application layer** (above Normitri) is responsible for routing frames by `customer_id`/`camera_id`, creating and owning one pipeline per unit, and tagging results in callbacks. Normitri provides the single-pipeline and batch APIs; it does not implement “pipeline per customer/camera” itself.
+
+**Is it easy to do with our framework?** Yes. You do not need to change Normitri. Build one pipeline per customer/camera using the same logic you use today (e.g. the same `build_pipeline(cfg)` or equivalent): each pipeline is an independent object that owns its own stages and inference backend. Keep a map (e.g. `camera_id → Pipeline` or `customer_id → Pipeline`). When a frame arrives for camera K, look up the pipeline for K and call `run_pipeline(pipeline_for_K, frame)` — from a thread dedicated to that camera, or from a pool that executes “process this frame for this camera” tasks. Each pipeline is used from at most one thread at a time, so the backend stays single-threaded and you avoid thread-safety issues. The only code you add is application-level: routing (which pipeline for this frame?), pipeline creation and storage (e.g. at startup or on first frame per camera), and optional threading (one thread per camera, or a worker pool that takes (camera_id, frame) and calls `run_pipeline` with the right pipeline). No new Normitri APIs are required.
+
+See [Threading and memory management](threading-and-memory-management.md#customer-level-or-camera-level-parallelism-recommended-for-production) for the full recommendation and comparison with frame-level-only parallelism.
 
 ---
 
@@ -100,5 +121,6 @@ Design and gaps: [inference-design-and-gaps.md](inference-design-and-gaps.md).
 
 - [Inference contract](inference-contract.md) — Frame format, validation, lifecycle.  
 - [Inference design & gaps](inference-design-and-gaps.md) — Why the interface is backend-agnostic and what’s missing for production.  
+- [Threading and memory management](threading-and-memory-management.md) — Parallelism, backend thread safety, customer/camera-level scaling.  
 - [Architecture](architecture.md) — Pipeline stages and DefectDetectionStage.  
 - [Building](building.md) — Conan, CMake, and how to add dependencies.

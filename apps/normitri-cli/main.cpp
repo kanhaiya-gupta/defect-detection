@@ -16,6 +16,7 @@
 #include <normitri/vision/load_image.hpp>
 #include <normitri/vision/mock_inference_backend.hpp>
 #include <normitri/vision/normalize_stage.hpp>
+#include <normitri/vision/onnx_inference_backend.hpp>
 #include <normitri/vision/resize_stage.hpp>
 
 #include <cstdint>
@@ -60,13 +61,25 @@ normitri::core::Pipeline build_pipeline(const normitri::app::PipelineConfig &cfg
       DefectKind::ProcessError,
   };
   DefectDecoder decoder(cfg.confidence_threshold, std::move(class_to_kind));
-  auto mock = std::make_unique<MockInferenceBackend>();
-  mock->set_defects({
-      {DefectKind::WrongItem, {0.1f, 0.2f, 0.3f, 0.4f}, 0.95f, std::nullopt, std::nullopt},
-  });
+
+  std::unique_ptr<IInferenceBackend> backend;
+  if (cfg.backend_type == normitri::app::InferenceBackendType::Onnx) {
+    if (cfg.model_path.empty()) {
+      throw std::runtime_error("backend_type=onnx requires model_path to be set in config");
+    }
+    auto onnx = std::make_unique<OnnxInferenceBackend>(cfg.model_path);
+    onnx->warmup();
+    backend = std::move(onnx);
+  } else {
+    auto mock = std::make_unique<MockInferenceBackend>();
+    mock->set_defects({
+        {DefectKind::WrongItem, {0.1f, 0.2f, 0.3f, 0.4f}, 0.95f, std::nullopt, std::nullopt},
+    });
+    backend = std::move(mock);
+  }
 
   pipeline.add_stage(
-      std::make_unique<DefectDetectionStage>(std::move(mock), std::move(decoder), 0));
+      std::make_unique<DefectDetectionStage>(std::move(backend), std::move(decoder), 0));
 
   return pipeline;
 }
@@ -82,6 +95,8 @@ normitri::core::Frame make_dummy_frame(std::uint32_t w, std::uint32_t h) {
 int main(int argc, char *argv[]) {
   std::string config_path;
   std::string input_path;
+  std::string backend_override;  // "mock" or "onnx" (and "tensorrt" when implemented)
+  std::string model_override;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -89,16 +104,37 @@ int main(int argc, char *argv[]) {
       config_path = argv[++i];
     } else if (arg == "--input" && i + 1 < argc) {
       input_path = argv[++i];
+    } else if (arg == "--backend" && i + 1 < argc) {
+      backend_override = argv[++i];
+    } else if (arg == "--model" && i + 1 < argc) {
+      model_override = argv[++i];
     } else if (arg == "--help" || arg == "-h") {
-      std::cout << "Usage: normitri_cli [--config <path>] [--input <path>]\n"
-                << "  --config  Pipeline config (key=value file); default: built-in\n"
-                << "  --input   Image path (optional; demo uses synthetic frame)\n";
+      std::cout << "Usage: normitri_cli [options] [--input <path>]\n"
+                << "  --config <path>   Pipeline config (key=value file); default: built-in (mock)\n"
+                << "  --backend <type>  Override backend: mock | onnx (default from config)\n"
+                << "  --model <path>    Override model path (required for --backend onnx)\n"
+                << "  --input <path>    Image path (optional; demo uses synthetic frame)\n"
+                << "\nBackend selection: config file (backend_type=, model_path=) or --backend/--model.\n";
       return 0;
     }
   }
 
   normitri::app::PipelineConfig cfg = config_path.empty() ? normitri::app::default_config()
                                                           : normitri::app::load_config(config_path);
+
+  if (!backend_override.empty()) {
+    if (backend_override == "mock") {
+      cfg.backend_type = normitri::app::InferenceBackendType::Mock;
+    } else if (backend_override == "onnx") {
+      cfg.backend_type = normitri::app::InferenceBackendType::Onnx;
+    } else {
+      std::cerr << "Unknown --backend " << backend_override << " (use mock or onnx)\n";
+      return 1;
+    }
+  }
+  if (!model_override.empty()) {
+    cfg.model_path = model_override;
+  }
 
   normitri::core::Pipeline pipeline = build_pipeline(cfg);
 
@@ -121,7 +157,10 @@ int main(int argc, char *argv[]) {
   }
 
   std::ostringstream out;
-  out << "frame_id=" << result->frame_id << " defects=" << result->defects.size() << "\n";
+  out << "frame_id=" << result->frame_id << " defects=" << result->defects.size();
+  if (result->camera_id.has_value()) out << " camera_id=" << *result->camera_id;
+  if (result->customer_id.has_value()) out << " customer_id=" << *result->customer_id;
+  out << "\n";
   for (const auto &d : result->defects) {
     out << "  " << defect_kind_str(d.kind) << " confidence=" << d.confidence << " bbox=("
         << d.bbox.x << "," << d.bbox.y << "," << d.bbox.w << "," << d.bbox.h << ")\n";

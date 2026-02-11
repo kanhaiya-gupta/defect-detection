@@ -2,6 +2,7 @@
 # 4.8.1: avoid opencv/4.9.0 Conan sha256 mismatch (upstream tarball checksum differs from recipe)
 opencv/4.8.1
 gtest/1.14.0
+onnxruntime/1.18.1
 
 [generators]
 CMakeDeps

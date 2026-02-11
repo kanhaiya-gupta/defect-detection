@@ -29,8 +29,11 @@ std::vector<normitri::core::Defect> DefectDecoder::decode(
     d.kind = normitri::core::DefectKind::ProcessError;
     if (i < result.class_ids.size()) {
       const auto cid = result.class_ids[i];
-      if (cid >= 0 && static_cast<std::size_t>(cid) <= max_class) {
-        d.kind = class_to_kind_[static_cast<std::size_t>(cid)];
+      if (cid >= 0) {
+        d.product_id = static_cast<std::uint64_t>(cid);
+        if (static_cast<std::size_t>(cid) <= max_class) {
+          d.kind = class_to_kind_[static_cast<std::size_t>(cid)];
+        }
       }
     }
     if (i * 4 + 3 < result.boxes.size()) {

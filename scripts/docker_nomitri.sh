@@ -24,6 +24,14 @@ SRC_MOUNT="${1:-}"
 
 cd "$REPO_ROOT"
 
+# Load development secrets (e.g. GITHUB_TOKEN) so Docker/Conan can use them
+if [[ -f "$REPO_ROOT/development.env" ]]; then
+  set -a
+  # shellcheck source=../development.env
+  source "$REPO_ROOT/development.env"
+  set +a
+fi
+
 VOLUME_MOUNT="$(pwd):/src"
 if [[ "$(uname -s)" == "MSYS"* ]] || [[ "$(uname -s)" == "MINGW"* ]]; then
   if command -v cygpath &>/dev/null; then
@@ -82,7 +90,14 @@ cmd_all() {
 cmd_test() {
   ensure_image
   echo "Running tests..."
-  run_in_docker ctest --test-dir build --output-on-failure
+  local -a docker_opts=(--rm -v "${VOLUME_MOUNT}" -w /src)
+  [[ -n "${GITHUB_TOKEN:-}" ]] && docker_opts+=(-e GITHUB_TOKEN)
+  # If default ONNX model exists, pass it so OnnxInferenceBackend tests run (not skipped)
+  local default_model="$REPO_ROOT/models/onnx-community__yolov10n/onnx/model.onnx"
+  if [[ -f "$default_model" ]]; then
+    docker_opts+=(-e "NORMITRI_TEST_ONNX_MODEL=/src/models/onnx-community__yolov10n/onnx/model.onnx")
+  fi
+  docker run "${docker_opts[@]}" "$IMAGE_NAME" ctest --test-dir build --output-on-failure
 }
 
 cmd_run() {

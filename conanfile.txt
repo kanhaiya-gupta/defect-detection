@@ -3,6 +3,7 @@
 opencv/4.8.1
 gtest/1.14.0
 onnxruntime/1.18.1
+onetbb/2021.10.0
 
 [generators]
 CMakeDeps
@@ -16,6 +17,8 @@ opencv/*:with_ffmpeg=False
 # Disable Wayland so we don't pull xorg/system; its system_requirements() runs apt-get without sudo
 # and fails on GitHub Actions (permission denied). Normitri is headless (no display).
 opencv/*:with_wayland=False
+# Required by onetbb when built from source (Conan Center recipe).
+hwloc/*:shared=True
 
 [layout]
 cmake_layout

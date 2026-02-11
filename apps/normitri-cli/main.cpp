@@ -18,6 +18,9 @@
 #include <normitri/vision/normalize_stage.hpp>
 #include <normitri/vision/onnx_inference_backend.hpp>
 #include <normitri/vision/resize_stage.hpp>
+#ifdef NORMITRI_HAS_TENSORRT
+#include <normitri/vision/tensorrt_inference_backend.hpp>
+#endif
 
 #include <cstdint>
 #include <cstring>
@@ -70,7 +73,18 @@ normitri::core::Pipeline build_pipeline(const normitri::app::PipelineConfig &cfg
     auto onnx = std::make_unique<OnnxInferenceBackend>(cfg.model_path);
     onnx->warmup();
     backend = std::move(onnx);
-  } else {
+  }
+#ifdef NORMITRI_HAS_TENSORRT
+  else if (cfg.backend_type == normitri::app::InferenceBackendType::TensorRT) {
+    if (cfg.model_path.empty()) {
+      throw std::runtime_error("backend_type=tensorrt requires model_path (engine file) to be set in config");
+    }
+    auto trt = std::make_unique<TensorRTInferenceBackend>(cfg.model_path);
+    trt->warmup();
+    backend = std::move(trt);
+  }
+#endif
+  else {
     auto mock = std::make_unique<MockInferenceBackend>();
     mock->set_defects({
         {DefectKind::WrongItem, {0.1f, 0.2f, 0.3f, 0.4f}, 0.95f, std::nullopt, std::nullopt},
@@ -95,7 +109,7 @@ normitri::core::Frame make_dummy_frame(std::uint32_t w, std::uint32_t h) {
 int main(int argc, char *argv[]) {
   std::string config_path;
   std::string input_path;
-  std::string backend_override;  // "mock" or "onnx" (and "tensorrt" when implemented)
+  std::string backend_override;  // "mock", "onnx", or "tensorrt"
   std::string model_override;
 
   for (int i = 1; i < argc; ++i) {
@@ -111,8 +125,8 @@ int main(int argc, char *argv[]) {
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "Usage: normitri_cli [options] [--input <path>]\n"
                 << "  --config <path>   Pipeline config (key=value file); default: built-in (mock)\n"
-                << "  --backend <type>  Override backend: mock | onnx (default from config)\n"
-                << "  --model <path>    Override model path (required for --backend onnx)\n"
+                << "  --backend <type>  Override backend: mock | onnx | tensorrt (default from config)\n"
+                << "  --model <path>    Override model path (required for --backend onnx or tensorrt)\n"
                 << "  --input <path>    Image path (optional; demo uses synthetic frame)\n"
                 << "\nBackend selection: config file (backend_type=, model_path=) or --backend/--model.\n";
       return 0;
@@ -127,8 +141,15 @@ int main(int argc, char *argv[]) {
       cfg.backend_type = normitri::app::InferenceBackendType::Mock;
     } else if (backend_override == "onnx") {
       cfg.backend_type = normitri::app::InferenceBackendType::Onnx;
+    } else if (backend_override == "tensorrt") {
+#ifdef NORMITRI_HAS_TENSORRT
+      cfg.backend_type = normitri::app::InferenceBackendType::TensorRT;
+#else
+      std::cerr << "TensorRT backend not available (build with -DNORMITRI_USE_TENSORRT=ON and TensorRT/CUDA)\n";
+      return 1;
+#endif
     } else {
-      std::cerr << "Unknown --backend " << backend_override << " (use mock or onnx)\n";
+      std::cerr << "Unknown --backend " << backend_override << " (use mock, onnx, or tensorrt)\n";
       return 1;
     }
   }

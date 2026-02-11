@@ -1,5 +1,7 @@
 # Defect Detection Pipeline (Example Project)
 
+**Repository:** [github.com/kanhaiya-gupta/defect-detection](https://github.com/kanhaiya-gupta/defect-detection)
+
 **Example project:** defect detection pipeline for shopping items — **C++23**, **OpenCV**, edge-friendly, modular.
 
 Detects wrong item, wrong quantity, quality/expiry, and process errors (e.g. not scanned) in retail images. The pipeline is designed for **edge deployment** (e.g. at POS or in-store) with configurable stages: preprocessing (resize, normalize, color convert), pluggable inference (ONNX / TensorRT / Mock), and decoding to structured **DefectResult**. This is an **independent example** for retail/edge AI use cases; no company names, brands, or products are used with permission or endorsement.
@@ -61,7 +63,7 @@ Or one step: `./scripts/build_nomitri.sh all`. On Windows use Git Bash or WSL fo
 |--------|--------------|----------------|
 | **mock** | Tests, demo, CI (no model file). | Default if no config; or `--backend mock` or config `backend_type=mock`. |
 | **onnx** | Real defect detection with an ONNX model. | Config: `backend_type=onnx` and `model_path=/path/to/model.onnx`; or CLI: `--backend onnx --model /path/to/model.onnx`. |
-| **tensorrt** | (Planned) GPU-optimized inference. | Will use `backend_type=tensorrt` / `--backend tensorrt` and engine path. |
+| **tensorrt** | GPU-optimized inference (TensorRT engine). | Auto-enabled when TensorRT/CUDA are found at build time. Config: `backend_type=tensorrt`, `model_path=/path/to/model.engine`; or CLI: `--backend tensorrt --model /path/to/model.engine`. |
 
 **Examples:**
 
@@ -86,7 +88,7 @@ See [Implementation plan — Config and CLI](docs/implementation_plan.md#phase-1
 
 | Path | Description |
 |------|-------------|
-| **include/normitri/** | Public API: **core** (Frame, Defect, DefectResult, Pipeline, stages), **vision** (resize, normalize, color convert, defect decoder, inference backend interface, mock and ONNX backends), **app** (config, pipeline runner). |
+| **include/normitri/** | Public API: **core** (Frame, Defect, DefectResult, Pipeline, stages), **vision** (resize, normalize, color convert, defect decoder, inference backend interface, mock, ONNX, and TensorRT backends), **app** (config, pipeline runner). |
 | **src/** | Implementation (`.cpp`) for core, vision, and app; dependencies flow **app → vision → core** (core has no external deps). |
 | **apps/normitri-cli/** | CLI executable: run the pipeline on image(s), output defects (and optional JSON). |
 | **tests/** | **Unit tests** (core: frame, defect, pipeline; vision: defect decoder, mock backend) and **integration** (full pipeline). Uses GTest; run with `ctest --test-dir build`. |
@@ -105,7 +107,7 @@ See [Implementation plan — Config and CLI](docs/implementation_plan.md#phase-1
 | [**Preprocessing**](docs/preprocessing.md) | OpenCV-based stages; inference contract; future (ISPs, GPU). |
 | [**Workflow**](docs/workflow.md) | Pipeline diagrams (single-frame, batch, parallel). |
 | [**Architecture**](docs/architecture.md) | High-level design, layers (core → vision → app), pipeline stages, adding stages. |
-| [**Building**](docs/building.md) | CMake, Conan, Docker, options, CI, releases. |
+| [**Building**](docs/building.md) | CMake, Conan, Docker, options, CI, releases. See also [Running on Lightning AI](docs/building.md#running-on-lightning-ai). |
 | [**Local CI testing (act)**](docs/act-local-testing.md) | Run GitHub Actions workflows locally with act before pushing. |
 | [**Development**](docs/development.md) | Coding standards, module contents, testing. |
 | [**API Reference**](docs/api-reference.md) | Core types (Frame, Defect, DefectResult) and pipeline interfaces. |

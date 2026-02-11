@@ -26,6 +26,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NORMITRI_BUILD_TESTS "Build unit and integration tests" ON)
 option(NORMITRI_BUILD_APP "Build normitri-cli executable" ON)
+# When ON (default), TensorRT backend is built if TensorRT and CUDA are found; when OFF, skip.
+# Set to OFF to disable auto-detection (e.g. in CI without GPU).
+option(NORMITRI_USE_TENSORRT "Build TensorRT backend when TensorRT/CUDA are available (auto-detect)" ON)
+# When ON, look for TBB and build multi-camera/multi-tenant runner; when OFF, skip. Set OFF if TBB is not available.
+option(NORMITRI_USE_TBB "Build TBB-based multi-camera runner when TBB is available (auto-detect)" ON)
 option(NORMITRI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (CI)" OFF)
 
 # -----------------------------------------------------------------------------
@@ -48,6 +53,49 @@ unset(_conan_generators)
 
 find_package(OpenCV REQUIRED)
 find_package(onnxruntime REQUIRED)
+
+# Auto-detect TensorRT and CUDA when NORMITRI_USE_TENSORRT is ON (default). If found, build
+# TensorRT backend; if not found, build without it. Set NORMITRI_USE_TENSORRT=OFF to skip.
+set(NORMITRI_TENSORRT_AVAILABLE OFF)
+if(NORMITRI_USE_TENSORRT)
+  find_path(TensorRT_INCLUDE_DIR NvInfer.h
+    HINTS "$ENV{TensorRT_ROOT}" "$ENV{TENSORRT_ROOT}" "/usr" "/usr/local"
+    PATH_SUFFIXES include include/x86_64-linux-gnu)
+  find_library(TensorRT_nvinfer_LIBRARY nvinfer
+    HINTS "$ENV{TensorRT_ROOT}" "$ENV{TENSORRT_ROOT}" "/usr" "/usr/local"
+    PATH_SUFFIXES lib lib/x86_64-linux-gnu lib64)
+  find_library(CUDA_cudart_LIBRARY cudart
+    HINTS "$ENV{CUDA_HOME}" "$ENV{CUDA_PATH}" "/usr/local/cuda" "/usr"
+    PATH_SUFFIXES lib lib64 lib/x64)
+  if(TensorRT_INCLUDE_DIR AND TensorRT_nvinfer_LIBRARY AND CUDA_cudart_LIBRARY)
+    set(NORMITRI_TENSORRT_AVAILABLE ON)
+    message(STATUS "TensorRT/CUDA found: building TensorRT inference backend")
+    message(STATUS "  TensorRT: ${TensorRT_INCLUDE_DIR}, ${TensorRT_nvinfer_LIBRARY}")
+    message(STATUS "  CUDA cudart: ${CUDA_cudart_LIBRARY}")
+  else()
+    message(STATUS "TensorRT/CUDA not found; building without TensorRT backend (set NORMITRI_USE_TENSORRT=OFF to hide)")
+  endif()
+endif()
+
+# Auto-detect TBB when NORMITRI_USE_TBB is ON. If found, build multi-camera runner; if not, skip.
+# Try find_package(TBB) first (system or config); then try Conan-provided onetbb.
+set(NORMITRI_TBB_AVAILABLE OFF)
+if(NORMITRI_USE_TBB)
+  find_package(TBB QUIET)
+  if(TBB_FOUND AND TARGET TBB::tbb)
+    set(NORMITRI_TBB_AVAILABLE ON)
+    message(STATUS "TBB found: building multi-camera/multi-tenant runner")
+  else()
+    find_package(onetbb QUIET)
+    if(onetbb_FOUND AND TARGET onetbb::onetbb)
+      set(NORMITRI_TBB_AVAILABLE ON)
+      add_library(TBB::tbb ALIAS onetbb::onetbb)
+      message(STATUS "onetbb (TBB) found: building multi-camera/multi-tenant runner")
+    else()
+      message(STATUS "TBB not found; multi-camera TBB runner disabled (set NORMITRI_USE_TBB=OFF to hide)")
+    endif()
+  endif()
+endif()
 
 if(NORMITRI_BUILD_TESTS)
   find_package(GTest REQUIRED)
@@ -83,7 +131,7 @@ normitri_enable_warnings(normitri_core)
 # -----------------------------------------------------------------------------
 # Vision library (stages, inference adapter, OpenCV)
 # -----------------------------------------------------------------------------
-add_library(normitri_vision
+set(normitri_vision_sources
   src/vision/frame_cv_utils.cpp
   src/vision/load_image.cpp
   src/vision/inference_backend.cpp
@@ -95,6 +143,10 @@ add_library(normitri_vision
   src/vision/mock_inference_backend.cpp
   src/vision/onnx_inference_backend.cpp
 )
+if(NORMITRI_TENSORRT_AVAILABLE)
+  list(APPEND normitri_vision_sources src/vision/tensorrt_inference_backend.cpp)
+endif()
+add_library(normitri_vision ${normitri_vision_sources})
 target_include_directories(normitri_vision
   PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -102,18 +154,26 @@ target_include_directories(normitri_vision
   PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/vision"
     ${OpenCV_INCLUDE_DIRS}
+    $<$<BOOL:${NORMITRI_TENSORRT_AVAILABLE}>:${TensorRT_INCLUDE_DIR}>
 )
 target_link_libraries(normitri_vision PUBLIC normitri_core ${OpenCV_LIBS} onnxruntime::onnxruntime)
+if(NORMITRI_TENSORRT_AVAILABLE)
+  target_link_libraries(normitri_vision PRIVATE ${TensorRT_nvinfer_LIBRARY} ${CUDA_cudart_LIBRARY})
+endif()
 target_compile_features(normitri_vision PUBLIC cxx_std_23)
 normitri_enable_warnings(normitri_vision)
 
 # -----------------------------------------------------------------------------
 # App library (config, pipeline runner — shared by executables)
 # -----------------------------------------------------------------------------
-add_library(normitri_app_lib
+set(normitri_app_sources
   src/app/config.cpp
   src/app/pipeline_runner.cpp
 )
+if(NORMITRI_TBB_AVAILABLE)
+  list(APPEND normitri_app_sources src/app/pipeline_runner_tbb.cpp)
+endif()
+add_library(normitri_app_lib ${normitri_app_sources})
 target_include_directories(normitri_app_lib
   PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -122,6 +182,10 @@ target_include_directories(normitri_app_lib
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app"
 )
 target_link_libraries(normitri_app_lib PUBLIC normitri_vision)
+if(NORMITRI_TBB_AVAILABLE)
+  target_link_libraries(normitri_app_lib PUBLIC TBB::tbb)
+  target_compile_definitions(normitri_app_lib PUBLIC NORMITRI_HAS_TBB)
+endif()
 target_compile_features(normitri_app_lib PUBLIC cxx_std_23)
 normitri_enable_warnings(normitri_app_lib)
 
@@ -132,6 +196,9 @@ if(NORMITRI_BUILD_APP)
   add_executable(normitri_cli apps/normitri-cli/main.cpp)
   target_link_libraries(normitri_cli PRIVATE normitri_app_lib)
   target_compile_features(normitri_cli PRIVATE cxx_std_23)
+  if(NORMITRI_TENSORRT_AVAILABLE)
+    target_compile_definitions(normitri_cli PRIVATE NORMITRI_HAS_TENSORRT)
+  endif()
   normitri_enable_warnings(normitri_cli)
 endif()
 

@@ -119,16 +119,21 @@ Normitri does **not** implement this routing or “pipeline per customer/camera�
 
 - **Batch of frames**: If you have a batch of frames (e.g. from several cameras or a queue of scans), you can call `run_pipeline_batch_parallel(pipeline, frames, callback, num_workers)`. Frames are processed concurrently across workers. The callback is invoked from worker threads whenever a result is ready; it must be thread-safe. For production with many customers/cameras, prefer **one pipeline per customer/camera** and feed each pipeline only that unit’s frames (see above).
 - **Inference bottleneck**: If you keep a **single** shared pipeline, all workers share the **same** inference backend. If the backend is not thread-safe (e.g. current ONNX backend with one session), you must use `num_workers == 1` or make the backend thread-safe (e.g. mutex), or switch to **one pipeline (and backend) per customer/camera** so each session is single-threaded.
-- **No TBB**: The current design avoids a TBB dependency: it uses `std::thread`, `std::mutex`, and `std::condition_variable`. That is sufficient for a fixed pool of workers and a single shared queue. TBB would add task-based parallelism, work stealing, and potentially better load balance; it is optional for a future iteration if you need it.
+- **TBB (optional)**: When TBB is available at build time, Normitri also provides a **multi-camera / multi-tenant** runner that uses TBB for task-based scheduling. See [TBB-based multi-camera runner](#tbb-based-multi-camera-runner) below.
 
-### Optional: TBB or other libraries later
+### TBB-based multi-camera runner
 
-If you need to scale further (e.g. many more concurrent streams, better load balance, or integration with other TBB-based code):
+When built with **TBB** (CMake finds TBB or Conan provides `onetbb`), the app library exposes:
 
-- **TBB**: You could introduce a dependency on Intel TBB and use it to run **per-customer or per-camera** work: e.g. a task per camera that runs that camera’s pipeline on its frames. That fits the recommended “one pipeline per camera” model; TBB would schedule those tasks and balance load.
-- **Dedicated inference process**: For very high throughput, inference is sometimes offloaded to a separate process or service (e.g. a GPU server) that receives frames and returns results; the “many customers” side then only enqueues work and collects results.
+- **`run_pipeline_multi_camera_tbb(pipelines, work_items, callback)`** — Takes a map of **unit_id → Pipeline\*** (e.g. one pipeline per camera or per customer), a flat list of **(unit_id, frame)** work items, and a thread-safe callback. TBB runs one task per work item; each task runs `pipeline_for_unit.run(frame)` and invokes the callback with the result and unit_id. No shared backend: each pipeline is used only by the tasks that have that unit_id. For **non-thread-safe backends** (ONNX, TensorRT), submit at most one work item per unit_id per call, or use a thread-safe backend.
 
-Summary: **Yes, we use parallel processing for defect detection** — via `run_pipeline_batch_parallel()` and a std::thread-based pool. For **many customers or many cameras**, you should add **customer-level or camera-level** parallelism: one pipeline (and backend) per customer or per camera, with routing and callbacks in the application layer. We do **not** use TBB today; it can be added later for task-based scheduling of those per-customer/camera pipelines if needed.
+**When to use it:** On a **GPU server** with many cameras (or customers), create one pipeline (and one TensorRT or ONNX backend) per camera, fill a map `camera_id → &pipeline`, and submit a batch of `(camera_id, frame)` work items. TBB schedules the work across cores; each pipeline stays single-threaded per call. Build with `-DNORMITRI_USE_TBB=ON` (default) and install TBB (e.g. `conan install` pulls `onetbb`, or install system TBB). See [Implementation plan — Phase 3](../implementation_plan.md#phase-3-tbb-for-multi-camera--multi-user-parallelism-optional).
+
+### Optional: dedicated inference process
+
+For very high throughput, inference is sometimes offloaded to a separate process or service (e.g. a GPU server) that receives frames and returns results; the “many customers” side then only enqueues work and collects results.
+
+Summary: **Yes, we use parallel processing for defect detection** — via `run_pipeline_batch_parallel()` (std::thread pool) and, when TBB is available, **`run_pipeline_multi_camera_tbb()`** for per-camera/per-customer task scheduling. For **many customers or many cameras**, use one pipeline (and backend) per unit and either the TBB runner or application-level routing with the single-pipeline APIs.
 
 ---
 

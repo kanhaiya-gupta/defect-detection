@@ -57,6 +57,7 @@ PipelineConfig load_config(const std::string& path) {
     if (key == "model_path") c.model_path = value;
     else if (key == "backend_type") {
       if (value == "onnx") c.backend_type = InferenceBackendType::Onnx;
+      else if (value == "tensorrt") c.backend_type = InferenceBackendType::TensorRT;
       else if (value == "mock") c.backend_type = InferenceBackendType::Mock;
     }
     else if (key == "resize_width") c.resize_width = static_cast<std::uint32_t>(std::stoul(value));

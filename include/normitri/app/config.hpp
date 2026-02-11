@@ -7,10 +7,11 @@
 
 namespace normitri::app {
 
-/// Inference backend type: mock (synthetic) or onnx (real model).
+/// Inference backend type: mock (synthetic), onnx (real model), or tensorrt (GPU engine).
 enum class InferenceBackendType {
   Mock,
   Onnx,
+  TensorRT,
 };
 
 /// Pipeline configuration: model path, stages, thresholds.

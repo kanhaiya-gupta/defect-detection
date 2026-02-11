@@ -78,6 +78,15 @@ Design and gaps: [inference-design-and-gaps.md](inference-design-and-gaps.md).
 - **infer_batch()**: override in ONNX/TensorRT backend for batched input when using `run_pipeline_batch_parallel`.  
 - **Model lifecycle**: load in factory; call **warmup()** once before first real frame (already in contract).
 
+**Should you implement TensorRT?** Yes, if you target GPU and want the best inference latency. TensorRT is optional: you can start with **ONNX Runtime + CUDA** (same ONNX model, GPU-accelerated) and add a **TensorRT backend** later when you need maximum throughput or want to use pre-built TensorRT engines (`.engine`). The pipeline stays the same; you add `backend_type=tensorrt` and an engine path.
+
+**Building for GPU (e.g. Lightning AI):** The code can be built and run on GPU hosts (Lightning AI, AWS, on-prem with NVIDIA GPU). Two options:
+
+1. **ONNX Runtime + CUDA** — Add the CUDA execution provider to the existing ONNX backend; build with Conan/CMake on a machine that has CUDA and cuDNN. No TensorRT required; one build gives you GPU inference with your `.onnx` model.
+2. **TensorRT** — Add a TensorRT backend (new class implementing `IInferenceBackend`), Conan dependency on `tensorrt` (and CUDA/cuDNN), and build on a GPU host. You then export your model to a TensorRT engine (`.engine`) or build the engine at runtime from `.onnx`. Use `--backend tensorrt --model /path/to/model.engine` (or `.onnx` if you build the engine in the backend).
+
+Both options produce a single binary that runs on the GPU machine; the application layer chooses the backend via config or CLI. For Lightning AI: use a GPU-enabled image (e.g. CUDA base), install Conan dependencies with TensorRT/CUDA options as needed, and build Normitri; the resulting binary will run inference on the GPU.
+
 ### Deployment: many customers / cameras
 
 When many customers are scanning or many cameras are feeding frames, structure parallelism at **customer level** or **camera level**, not only at frame level:
@@ -88,6 +97,33 @@ When many customers are scanning or many cameras are feeding frames, structure p
 **Is it easy to do with our framework?** Yes. You do not need to change Normitri. Build one pipeline per customer/camera using the same logic you use today (e.g. the same `build_pipeline(cfg)` or equivalent): each pipeline is an independent object that owns its own stages and inference backend. Keep a map (e.g. `camera_id → Pipeline` or `customer_id → Pipeline`). When a frame arrives for camera K, look up the pipeline for K and call `run_pipeline(pipeline_for_K, frame)` — from a thread dedicated to that camera, or from a pool that executes “process this frame for this camera” tasks. Each pipeline is used from at most one thread at a time, so the backend stays single-threaded and you avoid thread-safety issues. The only code you add is application-level: routing (which pipeline for this frame?), pipeline creation and storage (e.g. at startup or on first frame per camera), and optional threading (one thread per camera, or a worker pool that takes (camera_id, frame) and calls `run_pipeline` with the right pipeline). No new Normitri APIs are required.
 
 See [Threading and memory management](threading-and-memory-management.md#customer-level-or-camera-level-parallelism-recommended-for-production) for the full recommendation and comparison with frame-level-only parallelism.
+
+### Phase 3: TBB for multi-camera / multi-user parallelism (optional)
+
+**Goal:** Use Intel TBB to schedule **per-camera or per-customer** work so that many cameras (or users) can be processed in parallel on a GPU server, with good load balance and no shared inference backend.
+
+**Why TBB:** The current `run_pipeline_batch_parallel()` uses a std::thread pool and a single shared pipeline; that forces either a thread-safe backend or a single worker. The recommended production model is **one pipeline (and one backend) per camera or per customer**. TBB adds task-based scheduling and work stealing: you submit one task per “(camera_id, frame)” and TBB runs them across workers. Each task uses only that camera’s pipeline, so each ONNX/TensorRT session is single-threaded and GPU use scales with the number of cameras.
+
+**Scope:**
+
+1. **Optional TBB dependency** — CMake option (e.g. `NORMITRI_USE_TBB`, default OFF or ON with auto-detect). Find TBB via `find_package(TBB)` or Conan. When TBB is not found, keep using the existing std::thread-based `run_pipeline_batch_parallel()`.
+2. **Multi-camera / multi-tenant runner** — New API that accepts a **map of unit id → pipeline** (e.g. `camera_id → Pipeline` or `customer_id → Pipeline`) and a **batch of (unit_id, frame)** work items. Implementation uses a TBB task arena (or `parallel_for` over work items): each task runs `pipeline_for_unit.run(frame)` and invokes the callback with the result and unit id. No shared backend; each pipeline is used from at most one task at a time (per unit, if you serialize per unit) or from one worker at a time (if work items are independent and pipelines are not shared across units).
+3. **Concrete API shape (to be refined)** — For example:
+   - `run_pipeline_multi_camera_tbb(pipelines_by_camera, frames_by_camera, callback)` where `pipelines_by_camera` is `std::unordered_map<std::string, std::reference_wrapper<Pipeline>>` and `frames_by_camera` is `std::unordered_map<std::string, std::vector<Frame>>` (or a single flat list of `(camera_id, frame)` pairs). Callback receives `(DefectResult, camera_id)`. TBB schedules one task per (camera_id, frame); each task uses only `pipelines_by_camera[camera_id]`.
+   - Alternatively, a **runner class** that holds the map of pipelines and exposes `submit(camera_id, frame)` and `run()` / drain, using a TBB flow graph or task group under the hood.
+4. **Backend and GPU** — Each pipeline continues to own one inference backend (ONNX or TensorRT). On a **GPU server**, build with TensorRT (or ONNX + CUDA) and create one pipeline per camera; each pipeline loads its own engine/session. GPU memory and throughput scale with the number of cameras; TBB balances CPU work (preprocessing, post-processing) and schedules which (camera, frame) runs next.
+
+**Order vs GPU:** You can do Phase 3 (TBB) first and then run on a GPU server, or run on the GPU server first with the current std::thread batch API (e.g. one worker per camera or one pipeline per camera and manual threading). Implementing TBB gives a clean, scalable way to drive many pipelines (many cameras/users) on one machine; the GPU server then runs that same binary with TensorRT backends.
+
+**Files to add or change (Phase 3):**
+
+| Area | Action |
+|------|--------|
+| **CMakeLists.txt** | Option `NORMITRI_USE_TBB`; `find_package(TBB)` or Conan; when found, build TBB-based runner and define `NORMITRI_HAS_TBB`. |
+| **conanfile.txt** | Optional: add `tbb` when using Conan for TBB. |
+| **include/normitri/app/** | New header for multi-camera/multi-tenant runner (e.g. `pipeline_runner_tbb.hpp` or extend `pipeline_runner.hpp` with `#ifdef NORMITRI_HAS_TBB`). |
+| **src/app/** | New or conditional implementation using TBB task arena / `parallel_for` over (unit_id, frame) work items. |
+| **docs/** | Update [Threading and memory management](threading-and-memory-management.md) to describe TBB-based multi-camera API and when to use it. |
 
 ---
 
@@ -105,6 +141,9 @@ See [Threading and memory management](threading-and-memory-management.md#custome
 | **tests/** | Add unit test for ONNX backend (with a small test model or fixture); integration test that runs pipeline with real backend if model present. |
 | **docs/** | Update README / building.md with “how to run with real model” and where to put the ONNX file (e.g. `models/` or config path). |
 
+| **Phase 2 — TensorRT** | **conanfile.txt**: add `tensorrt` (and CUDA/cuDNN as required). **include/** and **src/vision/**: add `tensorrt_inference_backend.hpp` and `.cpp` implementing `IInferenceBackend`. **config**: add `InferenceBackendType::TensorRT`; reuse `model_path` for engine. **main.cpp**: construct TensorRT backend when `backend_type==TensorRT`; CLI `--backend tensorrt`. **CMakeLists.txt**: link TensorRT libs (auto-detect when GPU available). **docs/building.md**: document GPU build. |
+| **Phase 3 — TBB** | **CMakeLists.txt**: option `NORMITRI_USE_TBB`, find TBB, build TBB-based multi-camera runner when available. **include/normitri/app/** and **src/app/**: new or conditional API for per-camera/per-customer parallelism using TBB task arena. **docs/threading-and-memory-management.md**: document TBB API and usage on GPU server. |
+
 ---
 
 ## Success criteria
@@ -114,6 +153,7 @@ See [Threading and memory management](threading-and-memory-management.md#custome
   - Different images (e.g. good vs defective) produce different DefectResults (count, kind, or confidence).  
   - Output is written to terminal and to `output/<basename>.txt` as today.  
 - CI continues to pass using MockInferenceBackend; optional job or script to run with ONNX + test model if available.
+- **Phase 3 (TBB):** When TBB is enabled, multi-camera runner schedules (camera_id, frame) work with one pipeline per camera; no shared backend; runs on GPU server with TensorRT backends per pipeline.
 
 ---
 

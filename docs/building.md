@@ -39,10 +39,11 @@ We do **not** vendor OpenCV or GTest in a **`third_party/`** folder; they are al
 From the repo root (Linux, macOS, WSL, or Git Bash on Windows):
 
 ```bash
+chmod +x scripts/*.sh   # once, if you get "permission denied"
 ./scripts/build_nomitri.sh install   # Install deps via Conan (uses --build=missing)
-./scripts/build_nomitri.sh build      # Configure and build (uses Conan toolchain if present)
+./scripts/build_nomitri.sh build     # Configure and build (uses Conan toolchain if present)
 # or
-./scripts/build_nomitri.sh all        # install then build
+./scripts/build_nomitri.sh all       # install then build
 ```
 
 The script uses **`--build=missing`** so Conan builds any package that has no pre-built binary for your platform (e.g. onnxruntime, date, onetbb). That keeps local and CI builds working. The script writes the toolchain to `build/conan_toolchain.cmake`; `build` then uses it automatically.
@@ -55,6 +56,7 @@ Otherwise you may see "No compatible configuration found" for some packages when
 
 | Error | Fix |
 |-------|-----|
+| **default profile doesn't exist** / **You need to create a default profile** | Run once: **`conan profile detect`**. Then run `./scripts/build_nomitri.sh install` again. |
 | **No compatible configuration found** (date, onnxruntime, onetbb, etc.) | Use **`--build=missing`** so Conan builds from source. Run `./scripts/build_nomitri.sh install` (it already passes `--build=missing`) or `conan install . --output-folder=build --build=missing`. |
 | **onetbb/... Invalid: requires hwloc/*:shared=True** | The conanfile already sets `hwloc/*:shared=True` in `[options]`. Ensure you use the project’s conanfile.txt and run with `--build=missing`. |
 
@@ -159,7 +161,7 @@ The **TensorRT** inference backend is **enabled automatically** when CMake finds
 3. If TensorRT is not found, the build continues without the TensorRT backend (ONNX and mock still work). To disable auto-detection (e.g. in CI without GPU), pass `-DNORMITRI_USE_TENSORRT=OFF`.
 4. **Run** with an engine file: `./build/apps/normitri-cli/normitri_cli --backend tensorrt --model /path/to/model.engine --input data/images/sample_shelf.jpg`
 
-The engine file (`.engine`) must be built from your detection model (e.g. export ONNX from training, then use `trtexec` or the TensorRT API to build the engine for your GPU). Input/output layout must match what the pipeline expects (see [Inference contract](inference-contract.md)).
+The engine file (`.engine`) must be **built from an ONNX model on the target GPU** (do not download a pre-built `.engine`; it is GPU- and TensorRT-version-specific). After [downloading an ONNX model](../models/README.md) (e.g. `./scripts/download_onnx_models.sh`), run **`./scripts/build_tensorrt_engine.sh`** on a machine with TensorRT and a GPU to produce a `.engine`; or use `trtexec --onnx=... --saveEngine=...` directly. Input/output layout must match what the pipeline expects (see [Inference contract](inference-contract.md)).
 
 **TensorRT unit tests:** When TensorRT is built, `normitri_vision_tests` includes TensorRT backend tests. One test (constructor with missing file) always runs; the rest require a real engine. Set `NORMITRI_TEST_TENSORRT_ENGINE` to the path of a `.engine` file (e.g. 640×640 input) to run them; if unset, those tests are skipped so CI without a GPU/engine still passes.
 
@@ -190,10 +192,12 @@ If the repo is private, use a personal access token or SSH key configured in the
 
 ### 3. Build
 
-Install Conan only if it’s not already available (`conan --version`). Then run the project build script:
+Install Conan only if it’s not already available (`conan --version`). If you get **permission denied** when running the script, make the scripts executable once: `chmod +x scripts/*.sh`. Then run the build:
 
 ```bash
 conan --version || pip install conan   # install Conan only if missing
+conan profile detect                    # create default Conan profile (once; fixes "default profile doesn't exist")
+chmod +x scripts/*.sh                   # if you see "permission denied" when running scripts
 ./scripts/build_nomitri.sh install   # Conan: opencv, gtest, onnxruntime, onetbb (--build=missing)
 ./scripts/build_nomitri.sh build     # CMake configure + build
 # or in one step:

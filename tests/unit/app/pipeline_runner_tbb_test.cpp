@@ -30,7 +30,7 @@ normitri::core::Pipeline make_mock_pipeline() {
       normitri::core::DefectKind::ExpiredOrQuality,
       normitri::core::DefectKind::ProcessError,
   };
-  auto decoder = std::make_unique<normitri::vision::DefectDecoder>(0.5f, std::move(map));
+  normitri::vision::DefectDecoder decoder(0.5f, std::move(map));
   auto mock = std::make_unique<normitri::vision::MockInferenceBackend>();
   mock->set_defects({{normitri::core::DefectKind::WrongItem, {0.1f, 0.2f, 0.3f, 0.4f}, 0.9f, std::nullopt, std::nullopt}});
   p.add_stage(std::make_unique<normitri::vision::DefectDetectionStage>(std::move(mock), std::move(decoder), 0));

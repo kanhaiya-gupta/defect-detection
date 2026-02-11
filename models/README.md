@@ -17,9 +17,22 @@ You can use a pre-trained detector from:
 
 **Compatibility:** Our ONNX backend expects a model with (at least) three outputs: **boxes**, **scores**, and **class IDs**. YOLO-style or SSD-style detection models usually match; if a model has a different output layout (e.g. a single combined tensor), you may need to adapt the backend or export a model that matches. See [Inference contract](../docs/inference-contract.md) and the ONNX backend implementation.
 
+## TensorRT engine: build from ONNX (no download)
+
+Unlike ONNX, **TensorRT `.engine` files are not downloaded**. They are **built on the target GPU** from an ONNX model, because the engine is specific to the GPU and TensorRT version.
+
+**Workflow:**
+
+1. **Download an ONNX model** (as above): e.g. `./scripts/download_onnx_models.sh` → `models/onnx-community__yolov10n/onnx/model.onnx`.
+2. **Build the engine** on a machine that has TensorRT and a GPU: run **`./scripts/build_tensorrt_engine.sh`** (or use `trtexec` directly; see script and [Building](../docs/building.md#building-with-tensorrt-optional-gpu)). The script uses the downloaded ONNX and writes a `.engine` file into `models/` (e.g. `models/onnx-community__yolov10n/engine/model.engine`).
+3. **Run the CLI** with `--backend tensorrt --model models/.../engine/model.engine`.
+
+If you don’t have a GPU or TensorRT, use the **ONNX** backend with the same `.onnx` file (CPU or ONNX Runtime with CUDA). No `.engine` is required for ONNX.
+
 ## What to put here
 
 - **ONNX models** (`.onnx`) — e.g. `detector.onnx`, or a file downloaded from Hugging Face / the model zoo. Or place the file(s) your ML team provides or that you export from your training pipeline.
+- **TensorRT engines** (`.engine`) — built from an ONNX model on the target GPU (see above); do not commit large binaries.
 - You can have **one or many** files (e.g. one per product category or per customer). Each pipeline uses one model at a time; the application chooses which model (and thus which file) to use per camera or customer.
 
 ## How they are used

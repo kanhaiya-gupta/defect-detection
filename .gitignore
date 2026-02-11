@@ -46,13 +46,13 @@ development.env
 output/
 
 # ONNX model files under models/ — ignore all except the one used by tests
-models/**/*.onnx
-models/**/*.engine
-!models/onnx-community__yolov10n/onnx/model.onnx
+#models/**/*.onnx
+#models/**/*.engine
+#!models/onnx-community__yolov10n/onnx/model.onnx
 
 # Sample/test images (data/images/README.md is tracked; run scripts/download_sample_images.sh to fetch images)
-data/images/*.jpg
-data/images/*.jpeg
-data/images/*.png
-data/images/*.bmp
-data/images/*.webp
+#data/images/*.jpg
+#data/images/*.jpeg
+#data/images/*.png
+#data/images/*.bmp
+#data/images/*.webp

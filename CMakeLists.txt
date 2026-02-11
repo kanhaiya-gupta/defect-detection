@@ -67,11 +67,14 @@ if(NORMITRI_USE_TENSORRT)
   find_library(CUDA_cudart_LIBRARY cudart
     HINTS "$ENV{CUDA_HOME}" "$ENV{CUDA_PATH}" "/usr/local/cuda" "/usr"
     PATH_SUFFIXES lib lib64 lib/x64)
-  if(TensorRT_INCLUDE_DIR AND TensorRT_nvinfer_LIBRARY AND CUDA_cudart_LIBRARY)
+  find_path(CUDA_INCLUDE_DIR cuda_runtime_api.h
+    HINTS "$ENV{CUDA_HOME}" "$ENV{CUDA_PATH}" "/usr/local/cuda" "/usr"
+    PATH_SUFFIXES include)
+  if(TensorRT_INCLUDE_DIR AND TensorRT_nvinfer_LIBRARY AND CUDA_cudart_LIBRARY AND CUDA_INCLUDE_DIR)
     set(NORMITRI_TENSORRT_AVAILABLE ON)
     message(STATUS "TensorRT/CUDA found: building TensorRT inference backend")
     message(STATUS "  TensorRT: ${TensorRT_INCLUDE_DIR}, ${TensorRT_nvinfer_LIBRARY}")
-    message(STATUS "  CUDA cudart: ${CUDA_cudart_LIBRARY}")
+    message(STATUS "  CUDA cudart: ${CUDA_cudart_LIBRARY}, CUDA include: ${CUDA_INCLUDE_DIR}")
   else()
     message(STATUS "TensorRT/CUDA not found; building without TensorRT backend (set NORMITRI_USE_TENSORRT=OFF to hide)")
   endif()
@@ -155,6 +158,7 @@ target_include_directories(normitri_vision
     "${CMAKE_CURRENT_SOURCE_DIR}/src/vision"
     ${OpenCV_INCLUDE_DIRS}
     $<$<BOOL:${NORMITRI_TENSORRT_AVAILABLE}>:${TensorRT_INCLUDE_DIR}>
+    $<$<BOOL:${NORMITRI_TENSORRT_AVAILABLE}>:${CUDA_INCLUDE_DIR}>
 )
 target_link_libraries(normitri_vision PUBLIC normitri_core ${OpenCV_LIBS} onnxruntime::onnxruntime)
 if(NORMITRI_TENSORRT_AVAILABLE)

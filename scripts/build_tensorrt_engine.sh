@@ -54,15 +54,21 @@ if [ -z "$TRTEXEC" ]; then
         break
       fi
     done
-    # Tar install in repo (e.g. TensorRT-10.15.1.29)
-    if [ -z "$TRTEXEC" ] && [ -x "$REPO_ROOT/TensorRT-10.15.1.29/bin/trtexec" ]; then
-      TRTEXEC="$REPO_ROOT/TensorRT-10.15.1.29/bin/trtexec"
+    # Tar install in repo: any TensorRT-* directory (e.g. TensorRT-10.15.1.29)
+    if [ -z "$TRTEXEC" ]; then
+      for trtdir in "$REPO_ROOT"/TensorRT-*/bin; do
+        if [ -x "${trtdir}/trtexec" ] 2>/dev/null; then
+          TRTEXEC="${trtdir}/trtexec"
+          break
+        fi
+      done
     fi
   fi
 fi
 if [ -z "$TRTEXEC" ] || ! [ -x "$TRTEXEC" ]; then
   echo "trtexec not found. TensorRT is required to build a .engine file." >&2
-  echo "  - Install TensorRT on this machine and add its bin/ to PATH, or set TRTEXEC=/path/to/trtexec" >&2
+  echo "  - If you extracted the TensorRT tar in this repo, run: export TRT_DIR=\$(pwd)/TensorRT-10.15.1.29" >&2
+  echo "  - Or set TRTEXEC=/path/to/trtexec or add TensorRT bin/ to PATH" >&2
   echo "  - If this environment has no GPU/TensorRT, use the ONNX backend instead: --backend onnx --model <path/to/model.onnx>" >&2
   exit 1
 fi

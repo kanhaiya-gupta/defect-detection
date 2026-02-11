@@ -156,12 +156,40 @@ The repo uses five **trigger-based** workflows: **CI** (build + test with GCC an
 
 The **TensorRT** inference backend is **enabled automatically** when CMake finds TensorRT and CUDA on the build machine (e.g. on Lightning AI or any GPU host with TensorRT installed). No extra CMake option is required.
 
-1. **Install TensorRT and CUDA** on the build machine (e.g. from [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt) and [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads), or via package manager: `apt install libnvinfer-dev libcudart-dev` on Debian/Ubuntu when using the NVIDIA repo).
+1. **Install TensorRT and CUDA** on the build machine (e.g. from [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt) and [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)). If the build script’s auto-install fails (no NVIDIA repo), install manually as below.
 2. **Configure and build as usual** (e.g. `./scripts/build_nomitri.sh all` or `cmake -B build && cmake --build build`). If TensorRT/CUDA are found, you will see “TensorRT/CUDA found: building TensorRT inference backend” and the CLI will support `--backend tensorrt`.
 3. If TensorRT is not found, the build continues without the TensorRT backend (ONNX and mock still work). To disable auto-detection (e.g. in CI without GPU), pass `-DNORMITRI_USE_TENSORRT=OFF`.
 4. **Run** with an engine file: `./build/apps/normitri-cli/normitri_cli --backend tensorrt --model /path/to/model.engine --input data/images/sample_shelf.jpg`
 
 The engine file (`.engine`) must be **built from an ONNX model on the target GPU** (do not download a pre-built `.engine`; it is GPU- and TensorRT-version-specific). After [downloading an ONNX model](../models/README.md) (e.g. `./scripts/download_onnx_models.sh`), run **`./scripts/build_tensorrt_engine.sh`** on a machine with TensorRT and a GPU to produce a `.engine`; or use `trtexec --onnx=... --saveEngine=...` directly. Input/output layout must match what the pipeline expects (see [Inference contract](inference-contract.md)).
+
+**Manual TensorRT install (when auto-install fails):**
+
+- **Option A — Apt (Ubuntu 22.04, when NVIDIA repo is configured):** On some images the repo is not configured. Add it and install (omit `libcudart-dev` if the package is not found; CUDA may already be present):
+  ```bash
+  wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+  sudo dpkg -i cuda-keyring_1.1-1_all.deb
+  sudo apt-get update
+  sudo apt-get install -y tensorrt libnvinfer-dev
+  ```
+  On **Ubuntu 24.04**, apt may fail due to TensorRT’s Python &lt; 3.11 dependency; use Option B instead.
+
+- **Option B — Tar file (recommended when apt fails, e.g. Ubuntu 24.04):** Download the TensorRT GA tarball from the [direct links in the TensorRT README](https://github.com/NVIDIA/TensorRT#downloading-tensorrt-build), then extract and set the environment. The download is about **7.9 GB**. Example for **CUDA 12.9** (use CUDA 13.1 URL if your system uses CUDA 13.x):
+  ```bash
+  cd /path/to/your/repo
+  wget -O TensorRT-10.15.1.29.Linux.x86_64-gnu.cuda-12.9.tar.gz \
+    "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.15.1/tars/TensorRT-10.15.1.29.Linux.x86_64-gnu.cuda-12.9.tar.gz"
+  tar -xzf TensorRT-10.15.1.29.Linux.x86_64-gnu.cuda-12.9.tar.gz
+  export TRT_DIR="$(pwd)/TensorRT-10.15.1.29"
+  export PATH="$TRT_DIR/bin:$PATH"
+  export LD_LIBRARY_PATH="$TRT_DIR/lib:$LD_LIBRARY_PATH"
+  trtexec --version
+  ```
+  Then run `./scripts/build_tensorrt_engine.sh` (or set `TRTEXEC=$TRT_DIR/bin/trtexec` if the script does not find `trtexec`). To use the TensorRT backend in the app, point CMake at this install, e.g. `export TensorRT_ROOT=$TRT_DIR` before running `./scripts/build_nomitri.sh build`.
+</think>
+Updated the manual TensorRT section in `docs/building.md` with the correct options:
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
+Read
 
 **TensorRT unit tests:** When TensorRT is built, `normitri_vision_tests` includes TensorRT backend tests. One test (constructor with missing file) always runs; the rest require a real engine. Set `NORMITRI_TEST_TENSORRT_ENGINE` to the path of a `.engine` file (e.g. 640×640 input) to run them; if unset, those tests are skipped so CI without a GPU/engine still passes.
 

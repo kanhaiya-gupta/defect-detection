@@ -35,11 +35,15 @@ else
   ENGINE_PATH="$ENGINE_DIR/model.engine"
 fi
 
-# Find trtexec (TensorRT): PATH, then common install locations
+# Find trtexec (TensorRT): TRTEXEC, TRT_DIR/TensorRT_ROOT, PATH, then common install locations
 TRTEXEC="${TRTEXEC:-}"
 if [ -z "$TRTEXEC" ]; then
   if command -v trtexec &>/dev/null; then
     TRTEXEC="trtexec"
+  elif [ -n "${TRT_DIR:-}" ] && [ -x "${TRT_DIR}/bin/trtexec" ]; then
+    TRTEXEC="${TRT_DIR}/bin/trtexec"
+  elif [ -n "${TensorRT_ROOT:-}" ] && [ -x "${TensorRT_ROOT}/bin/trtexec" ]; then
+    TRTEXEC="${TensorRT_ROOT}/bin/trtexec"
   elif [ -x "/usr/bin/trtexec" ]; then
     TRTEXEC="/usr/bin/trtexec"
   else
@@ -50,6 +54,10 @@ if [ -z "$TRTEXEC" ]; then
         break
       fi
     done
+    # Tar install in repo (e.g. TensorRT-10.15.1.29)
+    if [ -z "$TRTEXEC" ] && [ -x "$REPO_ROOT/TensorRT-10.15.1.29/bin/trtexec" ]; then
+      TRTEXEC="$REPO_ROOT/TensorRT-10.15.1.29/bin/trtexec"
+    fi
   fi
 fi
 if [ -z "$TRTEXEC" ] || ! [ -x "$TRTEXEC" ]; then

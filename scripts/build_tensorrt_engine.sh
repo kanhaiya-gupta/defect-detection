@@ -35,7 +35,7 @@ else
   ENGINE_PATH="$ENGINE_DIR/model.engine"
 fi
 
-# Find trtexec (TensorRT)
+# Find trtexec (TensorRT): PATH, then common install locations
 TRTEXEC="${TRTEXEC:-}"
 if [ -z "$TRTEXEC" ]; then
   if command -v trtexec &>/dev/null; then
@@ -43,9 +43,20 @@ if [ -z "$TRTEXEC" ]; then
   elif [ -x "/usr/bin/trtexec" ]; then
     TRTEXEC="/usr/bin/trtexec"
   else
-    echo "trtexec not found. Install TensorRT and add it to PATH, or set TRTEXEC=/path/to/trtexec" >&2
-    exit 1
+    # Common TensorRT install paths (e.g. NVIDIA containers, /opt, /usr/local)
+    for dir in /usr/local/TensorRT*/bin /opt/TensorRT*/bin /usr/local/cuda*/bin; do
+      if [ -x "${dir}/trtexec" ] 2>/dev/null; then
+        TRTEXEC="${dir}/trtexec"
+        break
+      fi
+    done
   fi
+fi
+if [ -z "$TRTEXEC" ] || ! [ -x "$TRTEXEC" ]; then
+  echo "trtexec not found. TensorRT is required to build a .engine file." >&2
+  echo "  - Install TensorRT on this machine and add its bin/ to PATH, or set TRTEXEC=/path/to/trtexec" >&2
+  echo "  - If this environment has no GPU/TensorRT, use the ONNX backend instead: --backend onnx --model <path/to/model.onnx>" >&2
+  exit 1
 fi
 
 echo "Building TensorRT engine from $ONNX_PATH"

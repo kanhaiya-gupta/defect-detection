@@ -194,6 +194,8 @@ normitri_enable_warnings(normitri_app_lib)
 # -----------------------------------------------------------------------------
 if(NORMITRI_BUILD_APP)
   add_executable(normitri_cli apps/normitri-cli/main.cpp)
+  set_target_properties(normitri_cli PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/apps/normitri-cli")
   target_link_libraries(normitri_cli PRIVATE normitri_app_lib)
   target_compile_features(normitri_cli PRIVATE cxx_std_23)
   if(NORMITRI_TENSORRT_AVAILABLE)
